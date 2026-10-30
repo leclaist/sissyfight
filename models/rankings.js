@@ -4,8 +4,11 @@
 var db = require('../database');
 var User = require('./user');
 var _ = require('lodash');
-var async = require('async');
 var moment = require('moment');
+
+function decodeAvatar(record) {
+	if (record && typeof record.avatar === 'string') record.avatar = record.avatar.length > 0 ? JSON.parse(record.avatar) : {};
+}
 
 function Rankings() {
 	
@@ -34,35 +37,46 @@ Rankings.everything = function(userid, callback) {
 			Rankings.pastMonth(null, userid, cb);
 		};
 	}
-	async.parallel(tasks, callback);
+	
+	// run them all in parallel and collect results by task name
+	var names = Object.keys(tasks);
+	var all = Promise.all(names.map(function(name) {
+		return new Promise(function(resolve, reject) {
+			tasks[name](function(err, result) {
+				if (err) reject(err);
+				else resolve(result);
+			});
+		});
+	})).then(function(results) {
+		return _.zipObject(names, results);
+	});
+	db.nodeify(all, callback);
 }
 
 // return this month's top (100) ranked players
 Rankings.thisMonth = function(limit, callback) {
 	if (!limit) limit=100;
 	
+	var literal = db.sequelize.literal;
 	var top = User.findAll({
 		attributes: [
 			'id', 'nickname', 'avatar', 
 			'month_points', 'month_games', 'month_wins', 'month_wins_solo', 
 			'alltime_points', 'alltime_games', 'alltime_wins', 'alltime_wins_solo',
-			['ROUND(100 * month_wins / month_games)', 'month_win_pct'],
-			['ROUND(100 * alltime_wins / alltime_games)', 'alltime_win_pct'],
-			['ROUND(100 * alltime_wins_solo / alltime_games)', 'alltime_win_solo_pct'],
-			['ROUND(100 * (alltime_wins-alltime_wins_solo) / alltime_games)', 'alltime_win_team_pct'],
+			[literal('ROUND(100 * month_wins / month_games)'), 'month_win_pct'],
+			[literal('ROUND(100 * alltime_wins / alltime_games)'), 'alltime_win_pct'],
+			[literal('ROUND(100 * alltime_wins_solo / alltime_games)'), 'alltime_win_solo_pct'],
+			[literal('ROUND(100 * (alltime_wins-alltime_wins_solo) / alltime_games)'), 'alltime_win_team_pct'],
 		],
-		where: {month_games: {gt: 0}},
+		where: {month_games: {[db.Sequelize.Op.gt]: 0}},
 		order: [['month_points', 'DESC']],
-		limit: limit
-	}, {raw: true}
-	).complete(function(error, results) {
-		if (error) callback(error);
-		// decode avatar
-		_.each(results, function(player) {
-			if (player.avatar.length > 0) player.avatar = JSON.parse(player.avatar);
-		});
-		callback(null, results);
+		limit: limit,
+		raw: true
+	}).then(function(results) {
+		_.each(results, decodeAvatar);
+		return results;
 	});
+	db.nodeify(top, callback);
 }
 
 Rankings.thisMonthUserInfo = function(userid, callback) {
@@ -76,23 +90,19 @@ Rankings.thisMonthUserInfo = function(userid, callback) {
 				+ "COUNT(a2.nickname) points_rank " 
 				+ "FROM Users a1, Users a2 "
 				+ "WHERE a1.id=:id AND (a1.month_points < a2.month_points OR (a1.month_points=a2.month_points AND a1.id = a2.id) ) "
-				+ "GROUP BY a1.month_points ";
+				+ "GROUP BY a1.id ";
 	
-	db.sequelize.query(query, null, {raw:true}, {id: userid}).complete(function(error, userresults) {
-		if (error) callback(error);	
-		else {
-			if (userresults.length==0) userresults = null;
-			else userresults = userresults[0];
-			
-			// decode avatar
-			if (userresults.avatar.length > 0) userresults.avatar = JSON.parse(userresults.avatar);
-			
-			// if no games this month, no rank
-			if (userresults.month_games == 0) userresults.points_rank = undefined;
-			
-			callback(null, userresults);
-		}
-	});
+	db.nodeify(db.query(query, {id: userid}).then(function(userresults) {
+		if (userresults.length==0) return null;
+		userresults = userresults[0];
+		
+		decodeAvatar(userresults);
+		
+		// if no games this month, no rank
+		if (userresults.month_games == 0) userresults.points_rank = undefined;
+		
+		return userresults;
+	}), callback);
 }
 
 
@@ -103,7 +113,7 @@ Rankings.thisMonthUserInfo = function(userid, callback) {
 Rankings.pastMonth = function(month, userid, callback) {
 	var whereTerms = [], queryArgs = {};
 	if (month) {
-		whereTerms.push("month=:month ");
+		whereTerms.push(Rankings.MONTH_TABLE + ".record_month=:month ");
 		queryArgs.month = month;
 	}
 	if (userid) {
@@ -127,31 +137,26 @@ Rankings.pastMonth = function(month, userid, callback) {
 				+ 	"WHERE " + whereTerms.join(" AND ")
 				+ "ORDER BY record_month DESC, month_win_pct_rank ASC";
 				
-	db.sequelize.query(query, null, {raw:true}, queryArgs).complete(function(error, results) {
-		if (error) callback(error);
-		
-		else {
-			// organize records by month and decode avatar json
-			var monthlyResults = {};
-			_.each(results, function(record) {
-				if (userid) monthlyResults[record.record_month] = record; // don't package single user results in array
-				else {
-					if (!monthlyResults[record.record_month]) monthlyResults[record.record_month] = [];
-					monthlyResults[record.record_month].push(record);
-				}
-				// decode avatar
-				if (record.avatar.length > 0) record.avatar = JSON.parse(record.avatar);
-			});
-			callback(null, monthlyResults);
-		}
-	});
+	db.nodeify(db.query(query, queryArgs).then(function(results) {
+		// organize records by month and decode avatar json
+		var monthlyResults = {};
+		_.each(results, function(record) {
+			if (userid) monthlyResults[record.record_month] = record; // don't package single user results in array
+			else {
+				if (!monthlyResults[record.record_month]) monthlyResults[record.record_month] = [];
+				monthlyResults[record.record_month].push(record);
+			}
+			decodeAvatar(record);
+		});
+		return monthlyResults;
+	}), callback);
 }
 
 
 
 // get months for which historic score data is available
 Rankings.getMonths = function(callback) {
-	db.sequelize.query("SELECT DISTINCT record_month FROM " + Rankings.MONTH_TABLE + " ORDER BY record_month DESC").complete(callback);
+	db.nodeify(db.query("SELECT DISTINCT record_month FROM " + Rankings.MONTH_TABLE + " ORDER BY record_month DESC"), callback);
 }
 
 
@@ -165,23 +170,19 @@ Rankings.hallOfFame = function(limit, callback) {
 				+ 	"ROUND(100 * Users.alltime_wins_solo / Users.alltime_games) as alltime_win_solo_pct, "
 				+ 	"ROUND(100 * (Users.alltime_wins-Users.alltime_wins_solo) / Users.alltime_games) as alltime_win_team_pct "
 				+ "FROM Users INNER JOIN " + Rankings.MONTH_TABLE + " USING(id) "
-				+ "GROUP BY id "
+				+ "GROUP BY Users.id "
 				+ "HAVING total_fame > 0 "
 				+ "ORDER BY total_fame DESC "
 				+ "LIMIT :limit ";
 	
-	db.sequelize.query(query, null, {raw:true}, {limit: limit}).complete(function(error, results) {
-		if (error) callback(error);
-		else {
-			var rank = 1;
-			_.each(results, function(record) {
-				// decode avatar
-				if (record.avatar.length > 0) record.avatar = JSON.parse(record.avatar);
-				record.rank = rank++;
-			});		
-			callback(null, results);
-		}
-	});
+	db.nodeify(db.query(query, {limit: limit}).then(function(results) {
+		var rank = 1;
+		_.each(results, function(record) {
+			decodeAvatar(record);
+			record.rank = rank++;
+		});		
+		return results;
+	}), callback);
 	
 }
 
@@ -229,10 +230,18 @@ Rankings.rollover = function(callback) {
 		+ "AND record_month = :LAST_MONTH "
 	);
 	
-	// make it happen!
-	async.eachSeries(queries, function(query, cb) {
-		db.sequelize.query(query, null, {raw:true}, {LAST_MONTH: lastMonth}).complete(cb);
-	}, callback);
+	// make it happen! in a transaction, so a failure can't reset scores without recording them
+	var run = db.sequelize.transaction(function(transaction) {
+		return queries.reduce(function(previous, query) {
+			return previous.then(function() {
+				return db.sequelize.query(query, {replacements: {LAST_MONTH: lastMonth}, type: db.Sequelize.QueryTypes.RAW, transaction: transaction});
+			});
+		}, Promise.resolve());
+	});
+	db.nodeify(run, callback || function(err) {
+		if (err) console.log("Rankings.rollover failed: " + err);
+		else console.log("Rankings.rollover: recorded scores for " + lastMonth);
+	});
 }
 
 

@@ -13,7 +13,7 @@ function auth(req, res, next) {
 		return next();
 	}
 	else {
-		res.send(404, "Not found.");
+		res.status(404).send("Not found.");
 	}
 }
 

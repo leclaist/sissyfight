@@ -11,6 +11,7 @@
 	/game - game page
 	
 */
+var crypto = require('crypto');
 var User = require('../models/user');
 var Rankings = require('../models/rankings');
 var qs = require('querystring');
@@ -19,13 +20,11 @@ var whiskers = require('whiskers');
 var fs = require('fs');
 var _ = require('lodash');
 
-var Hashids = require("hashids"),
-    hashids = new Hashids("tokens");
-
 var text = require('../models/text');
 
 // helper: check that all listed arguments are strings
 function checkArgs(body, args) {
+	if (!body) return false;
 	for (var i in args) {
 		if (typeof body[args[i]] !== 'string') return false;
 	}
@@ -37,9 +36,12 @@ function checkArgs(body, args) {
 module.exports = function(app) {
 	/* GLOBALS --- */
 	// load subtemplates for including in pages
-	this.includes = {
-		mainheader: fs.readFileSync('views/inc_mainheader.html')
+	var includes = {
+		mainheader: fs.readFileSync('views/inc_mainheader.html', 'utf8')
 	};
+	
+	// site pages that /pages/:page may render
+	var sitePages = fs.readdirSync('views/pages').filter(function(name) { return /\.html$/.test(name); });
 	
 	
 	/* HOMEPAGE --------------------------- */
@@ -56,7 +58,7 @@ module.exports = function(app) {
 		var schools = app.get('schools');
 		
 		var context = {
-			includes: this.includes,
+			includes: includes,
 
 			// reminder to change this to less awkward code someday:
 			schoolpop1: schools['franklin'].getPopulation(),
@@ -86,7 +88,7 @@ module.exports = function(app) {
 	app.get('/reset/:code', function(req, res) {
 		req.session.destroy();
 		var context = {
-			includes: this.includes,
+			includes: includes,
 			code: req.params.code
 		};
 		res.render('resetpw.html', context);
@@ -94,77 +96,74 @@ module.exports = function(app) {
 	
 	// site pages
 	app.get('/pages/:page', function(req, res) {
-		fs.exists('views/pages/'+req.params.page, function(exists) {
-		
-			if (exists) {
-				var context = {
-					includes: this.includes,
-					rankings: {}
-				};
-				
-				var userid = undefined;
-				
-				if (req.session.user) {
-					context.loggedIn = 1;
-					context.nickname = req.session.user.nickname;
-					userid = req.session.user.id;
-				}
-				else {
-					context.loggedIn = 0;
-					context.nickname = '';
-				}
-				
-				
-				if (req.params.page == 'rankings.html') {
-					Rankings.everything(userid, function(error, rankings) {
-						
-						if (error) {
-							context.rankings.failed = true;
-							console.log("RANKINGS sql error", error);
-						}
-						else {
-							context.rankings = rankings;
-							
-							var pastmonth = moment().subtract(1, "months");
-							var pastmonth_key = pastmonth.format('YYYY-MM');
-							
-							// show older month if data exists
-							if (req.query['month']) {
-								if (rankings.past_top[req.query.month]) {
-									pastmonth_key = req.query.month;
-									pastmonth = moment(new Date(pastmonth_key+"-03"));
-								}
-							}
-							
-							// archives
-							var archives = [];
-							_.each(rankings.past_top, function(data, month_tag) {
-								var month_text = moment(new Date(month_tag+"-03")).format('MMM YYYY');
-								archives.push({text:month_text, tag:month_tag});
-							});
-							context.rankings.archives = _.sortBy(archives, 'tag').reverse();
-							
-							
-							context.rankings.lastmonth_top = rankings.past_top[pastmonth_key];
-							context.rankings.lastmonth_user = rankings.past_user ? rankings.past_user[pastmonth_key] : undefined;
-							
-							context.rankings.previousmonth = pastmonth.format('MMMM YYYY');
-						}
-						
-						context.rankings.currentmonth = moment().format('MMMM YYYY');
-						
-						var daystogo = 1 + moment().daysInMonth() - moment().date();
-						context.rankings.daystogo = daystogo + (" day" + ((daystogo == 1) ? "" : "s"));
-						
-						res.render('pages/rankings.html', context);
-					});
-				}
-				
-				
-				else res.render('pages/'+req.params.page, context);
+		if (sitePages.indexOf(req.params.page) != -1) {
+			var context = {
+				includes: includes,
+				rankings: {}
+			};
+			
+			var userid = undefined;
+			
+			if (req.session.user) {
+				context.loggedIn = 1;
+				context.nickname = req.session.user.nickname;
+				userid = req.session.user.id;
 			}
-			else res.status(404).send('Not found.');
-		});
+			else {
+				context.loggedIn = 0;
+				context.nickname = '';
+			}
+			
+			
+			if (req.params.page == 'rankings.html') {
+				Rankings.everything(userid, function(error, rankings) {
+					
+					if (error) {
+						context.rankings.failed = true;
+						console.log("RANKINGS sql error", error);
+					}
+					else {
+						context.rankings = rankings;
+						
+						var pastmonth = moment().subtract(1, "months");
+						var pastmonth_key = pastmonth.format('YYYY-MM');
+						
+						// show older month if data exists
+						if (req.query['month']) {
+							if (rankings.past_top[req.query.month]) {
+								pastmonth_key = req.query.month;
+								pastmonth = moment(new Date(pastmonth_key+"-03"));
+							}
+						}
+						
+						// archives
+						var archives = [];
+						_.each(rankings.past_top, function(data, month_tag) {
+							var month_text = moment(new Date(month_tag+"-03")).format('MMM YYYY');
+							archives.push({text:month_text, tag:month_tag});
+						});
+						context.rankings.archives = _.sortBy(archives, 'tag').reverse();
+						
+						
+						context.rankings.lastmonth_top = rankings.past_top[pastmonth_key];
+						context.rankings.lastmonth_user = rankings.past_user ? rankings.past_user[pastmonth_key] : undefined;
+						
+						context.rankings.previousmonth = pastmonth.format('MMMM YYYY');
+					}
+					
+					context.rankings.currentmonth = moment().format('MMMM YYYY');
+					
+					var daystogo = 1 + moment().daysInMonth() - moment().date();
+					context.rankings.daystogo = daystogo + (" day" + ((daystogo == 1) ? "" : "s"));
+					
+					res.render('pages/rankings.html', context);
+				});
+			}
+			
+			
+			else res.render('pages/'+req.params.page, context);
+		}
+		else res.status(404).send('Not found.');
 
 	});
 	
@@ -172,7 +171,7 @@ module.exports = function(app) {
 	// login problem pages (just doubleconnect for now)
 	app.get('/problem/:which', function(req, res) {
 		var context = {
-			includes: this.includes
+			includes: includes
 		}
 		if (req.session.user) {
 			context.loggedIn = 1;
@@ -191,7 +190,7 @@ module.exports = function(app) {
 	app.get('/game/:school', function(req, res) {
 		if (req.session.user) {
 			// send a token to the page that can be used to associate the socket with the user session
-			var token = hashids.encrypt(req.session.user.id) + Math.random();
+			var token = crypto.randomBytes(24).toString('hex');
 			req.session.token = token;
 			// get school id or default
 			if (req.params.school && app.get('getSchoolInfo')(req.params.school)) {
@@ -201,14 +200,14 @@ module.exports = function(app) {
 				req.session.school = app.get('schoolDefault'); 
 			}
 			var gameScale = 1, gameWidth=528, gameHeight=276;
-			if (req.param('double')) {
+			if (req.query['double']) {
 				gameScale *= 2;
 				gameWidth *= 2;
 				gameHeight *= 2;
 			}
 			var context = {
 				loggedIn: 1,
-				includes: this.includes,
+				includes: includes,
 				nickname:req.session.user.nickname,
 				token:req.session.token, session:req.session.id,
 				school:req.session.school, 
@@ -248,7 +247,7 @@ module.exports = function(app) {
 			}
 			else {
 				if (user) {
-					req.session.user = {nickname:user.nickname, id:user.id, level:user.level};
+					req.session.user = User.sessionInfo(user);
 					res.json({
 						ok: true,
 						nickname: user.nickname,
@@ -375,7 +374,7 @@ module.exports = function(app) {
 							});					
 						}
 						else {
-							req.session.user = user; 
+							req.session.user = User.sessionInfo(user);
 							res.json({
 								ok: true,
 								nickname: user.nickname

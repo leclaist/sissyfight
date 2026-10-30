@@ -80,3 +80,14 @@ google fonts - https://www.google.com/fonts
 lodash - http://lodash.com
 
 AND all the node packages referenced in package.json
+
+
+## bundled browser libraries (public/vendor)
+
+Copies of the exact library versions the client was written against, served by the app instead of third-party CDNs. The sockjs client (MIT) is served from the `sockjs-client` npm package.
+
+| File | Library | License | Source |
+|---|---|---|---|
+| `createjs-2013.12.12.min.js` | CreateJS suite (EaselJS, TweenJS, SoundJS, PreloadJS), Dec 2013 build | MIT | https://code.createjs.com/createjs-2013.12.12.min.js |
+| `lodash-2.2.1.min.js` | Lo-Dash 2.2.1 | MIT | https://cdnjs.cloudflare.com/ajax/libs/lodash.js/2.2.1/lodash.min.js |
+| `jquery-2.0.3.min.js` | jQuery 2.0.3 | MIT | https://ajax.googleapis.com/ajax/libs/jquery/2.0.3/jquery.min.js |

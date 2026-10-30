@@ -11,35 +11,62 @@ We unfortunately can't offer any additional support for use of the code.
 
 ## running a sissyfight server
 
-The sissyfight server code runs under node.js. The original server is running on [Heroku](https://www.heroku.com/). 
+The server runs on Node.js 24 with MySQL 8 for users, scores, and sessions, and an SMTP email service (SendGrid) for password reset emails. Game state lives in the server process, so run exactly one instance.
 
-## external servers
+### local development
 
-Sissyfight uses MySQL for persistent storage of user and score records, Redis for user sessions, and a service to send out emails, e.g. for password resets. 
+With Docker installed:
 
-### MySQL
+```
+docker compose up                        # http://localhost:3000 (APP_PORT=3100 docker compose up to use another port)
+docker compose run --rm app npm test     # game engine + server tests against MySQL
+```
 
-We use a MySQL server hosted by [Dreamhost](https://www.dreamhost.com/), but you can run your own or use any commercial MySQL service. To connect your MySQL server to your sissyfight node application, set the environment variable `SISSYFIGHT_DB`:
+### docker image
 
-`SISSYFIGHT_DB=mysql|DB SERVER|DB NAME|DB USER|DB PASSWORD`
+The [Dockerfile](Dockerfile) builds the production image. On startup the container runs `npm run db:setup` and then the server. Azure Container Apps runs `linux/amd64`, so from an Apple Silicon Mac:
 
-where `DB_SERVER` is the domain name of your database server, `DB NAME` is the name of the database, and `DB USER` and `DB PASSWORD` are the username and password for that database. 
+```
+docker buildx build --platform linux/amd64 -t sissyfight .
+# or build in Azure Container Registry directly:
+az acr build --registry <your-acr> --image sissyfight:<tag> .
+```
 
-In your MySQL database, you can set up the user, score, and text tables according to the structures in [database_tables.sql](database_tables.sql).
+To try the production image locally against the compose database: `docker compose --profile image up --build image` (http://localhost:3001).
 
-### Redis
+Run exactly one replica (game rooms live in memory), route WebSockets through the ingress, and use `/healthz` for health probes.
 
-We use a Redis server hosted by [Redis Labs](https://redislabs.com/), but you can run your own or use any commercial Redis service. To connect your Redis server, set the environment variable `SISSYFIGHT_REDIS`:
+`npm run db:setup` creates the tables and default texts from [database_tables.sql](database_tables.sql). It is safe to run on every deploy.
 
-`SISSYFIGHT_REDIS=redis|REDIS SERVER|PORT|NAME|AUTH`
+### configuration
 
-`REDIS SERVER` is the domain name of the Redis server, `PORT` is the port number, `NAME` is the username and `AUTH` is the password or authentication token.
+| Variable | |
+|---|---|
+| `DATABASE_URL` | `mysql://user:password@host:3306/database` (the older `SISSYFIGHT_DB=mysql\|host\|database\|user\|password` form also works) |
+| `DB_SSL` | `true` to require TLS to MySQL (Azure Database for MySQL needs this) |
+| `SESSION_SECRET` | secret for signing session cookies; required when `NODE_ENV=production` |
+| `SENDGRID_API_KEY` | SendGrid API key for password reset emails (or `SISSYFIGHT_MAILER=service\|user\|password` for another [Nodemailer](https://nodemailer.com/) service) |
+| `MAIL_TRANSPORT` | `json` to log emails instead of sending them |
+| `PUBLIC_URL` | base URL used in emailed links, e.g. `https://play.sissyfight.com` |
+| `BASIC_AUTH` | optional closed-testing logins: `user,password[\|user,password]` |
+| `PORT` | HTTP port (default 3000) |
 
-### Email
+The password reset email's sender, subject, and text are rows in the `Texts` table (`pwreset-email-*`); set `pwreset-email-from` to a sender address verified in SendGrid. The `homepage-news` row is shown on the main page.
 
-We use [SendGrid](https://sendgrid.com/)'s [Email API](https://sendgrid.com/solutions/email-api/) to send emails, but you can use any email service that is supported by the [Nodemailer](https://nodemailer.com/about/) module. To connect sissyfight to your your email server, set the environment variable `SISSYFIGHT_MAILER`:
+## deploying to Azure
 
-`SISSYFIGHT_MAILER=MAILSERVICE|USER|PASSWORD`
+[infra/](infra) holds Terraform for Azure Container Apps and Azure Database for MySQL, pulling the image from an existing container registry.
 
-`MAILSERVICE` is the name of the email service you are using (see Nodemailer's documentation), and `USER` and `PASSWORD` are your authentication info for the email service.
+```
+cp infra/terraform.tfvars.example infra/terraform.tfvars   # set subscription_id
+infra/deploy.sh                                             # build the image in ACR
+cd infra && terraform init && terraform apply              # create everything (first time)
+terraform output dns_records                               # A + TXT records to add at your DNS provider
+../infra/bind-domain.sh                                     # once DNS resolves: custom domain + managed certificate
+```
 
+After that, `infra/deploy.sh` builds the current commit and rolls the app onto it.
+
+### continuous deployment
+
+[CI](.github/workflows/ci.yml) runs the tests (against a MySQL service) and builds the Docker image on every push and pull request. When CI passes on `master`, [Deploy](.github/workflows/deploy.yml) builds the image in ACR, rolls the container app onto it, waits for the new revision to be healthy, and smoke-tests the site. It logs in to Azure with OpenID Connect, using these repository variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`. The deploy job is skipped until they are set. Terraform state and `terraform.tfvars` hold secrets and are gitignored.

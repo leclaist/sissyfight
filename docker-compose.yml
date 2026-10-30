@@ -1,0 +1,58 @@
+# Local development: MySQL 8.4 + the app on Node 24.
+#   docker compose up            run the server on http://localhost:3000 (APP_PORT=3100 to change)
+#   docker compose run --rm app npm test
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: sissyfight
+      MYSQL_USER: sissyfight
+      MYSQL_PASSWORD: sissyfight
+    volumes:
+      - ./docker/mysql-init.sql:/docker-entrypoint-initdb.d/01-test-db.sql:ro
+      - db-data:/var/lib/mysql
+    ports:
+      - "${DB_PORT:-3306}:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-usissyfight", "-psissyfight"]
+      interval: 5s
+      retries: 20
+
+  app:
+    image: node:24-bookworm
+    working_dir: /app
+    command: sh -c "npm run db:setup && npm start"
+    environment:
+      DATABASE_URL: mysql://sissyfight:sissyfight@db:3306/sissyfight
+      TEST_DATABASE_URL: mysql://sissyfight:sissyfight@db:3306/sissyfight_test
+      MAIL_TRANSPORT: json
+    volumes:
+      - .:/app
+      # keep linux node_modules out of the host checkout
+      - node-modules:/app/node_modules
+    ports:
+      - "${APP_PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # the production image, run against the local database:
+  #   docker compose --profile image up --build image    -> http://localhost:3001
+  image:
+    profiles: ["image"]
+    build: .
+    environment:
+      DATABASE_URL: mysql://sissyfight:sissyfight@db:3306/sissyfight
+      SESSION_SECRET: local-image-test-secret
+      PUBLIC_URL: http://localhost:3001
+      MAIL_TRANSPORT: json
+    ports:
+      - "3001:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:
+  node-modules:

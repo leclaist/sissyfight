@@ -71,7 +71,7 @@ GameRoom.prototype.getInfo = function(avatars) {
 				nickname:	conn.user.nickname,
 				avatar:		conn.user.avatar
 			}
-		}, this);
+		}.bind(this));
 	} // else use the default [id,nickname] from parent ChatRoom
 	
 	info.type = "GameRoom";
@@ -142,7 +142,7 @@ GameRoom.prototype.leave = function(conn, done) {
 			// clear boot vote
 			delete this.bootVotes[conn];
 			// delete any boot votes against me
-			this.bootVotes = _.omit(this.bootVotes, function(id) {return id==conn.user.id});
+			this.bootVotes = _.omitBy(this.bootVotes, function(id) {return id==conn.user.id});
 			
 			// let the game know, if any
 			if (this.game) this.game.leave(conn);
@@ -195,7 +195,7 @@ GameRoom.prototype.ping = function(conn, data) {
 			occupant.end();
 			console.log("Disconnected stalled user "+conn.user.nickname+" after "+((Date.now()-occupant.pingTime)/1000)+" seconds");
 		}
-	}, this);
+	}.bind(this));
 }
 
 
@@ -257,7 +257,7 @@ GameRoom.prototype.countBootVotes = function() {
 	_.each(this.bootVotes, function(target) {
 		if (counter[target]) counter[target]++;
 		else counter[target] = 1;
-	}, this);
+	}.bind(this));
 	return counter;
 }
 
@@ -269,7 +269,7 @@ GameRoom.prototype.bootByID = function(bootedID) {
 	// kick out the target
 	var bootedConn = _.find(this.occupants, function(conn) {
 		return conn.user.id == bootedID;
-	}, this);
+	}.bind(this));
 	if (bootedConn) {
 		this.blockedUsers.push(bootedConn.user.id);
 		bootedConn.bootMe();

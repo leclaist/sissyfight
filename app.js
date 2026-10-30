@@ -4,34 +4,34 @@
  */
 
 var express = require('express')
-  , RedisStore = require('connect-redis')(express)
-  , redis = require('redis')
+  , session = require('express-session')
+  , MySQLStore = require('express-mysql-session')(session)
+  , mysql = require('mysql2/promise')
+  , morgan = require('morgan')
   , http = require('http')
   , path = require('path')
   , sockjs  = require('sockjs')
   , whiskers = require('whiskers')
 ;
-  
+
 // i like to use lodash
 var _ = require('lodash');
 
-  
-// database setup  
+var config = require('./config');
+
+// database setup
 var db = require('./database');
 
 
 // ORM setup
 var User = require('./models/user');
-
-
-// scheduling setup for monthly score rollover
 var Rankings = require('./models/rankings');
-var schedule = require('node-schedule');
-var scoreRolloverJob = schedule.scheduleJob({date: 1, hour:4, minute:0}, Rankings.rollover);
 
 
-// socksjs setup
-var sockjs_opts = {sockjs_url: "http://cdn.sockjs.org/sockjs-0.3.min.js"};
+// socksjs setup: browsers that need the iframe transport load the client from here
+var sockjs_opts = {sockjs_url: "/vendor/sockjs-client/sockjs.min.js", log: function(severity, message) {
+	if (severity !== 'debug') console.log('sockjs ' + severity + ': ' + message);
+}};
 var sockjs = sockjs.createServer(sockjs_opts);
 
 
@@ -41,84 +41,77 @@ var app = express();
 // set up whiskers templating engine
 app.engine('.html', whiskers.__express);
 
+// Azure App Service terminates TLS in front of us
+if (config.production) app.set('trust proxy', 1);
+
 
 // optional basic authentication for setting up closed testing sessions:
 //  set environment variable BASIC_AUTH=username,password[|username,password]
-var basic_auth = undefined;
-var basic_auth_str = process.env.BASIC_AUTH;
-if (basic_auth_str) {
-	var basic_auth_users = _.map(basic_auth_str.split('|'), function(userAndPassword) {
-		return userAndPassword.split(',');
-	});
-	console.log(JSON.stringify(basic_auth_users));
-	// basic_auth_users now contains [[username, password], [username, password]....]
-	
-	// now set up the basic auth middleware as in http://stackoverflow.com/a/12148212
-	basic_auth = express.basicAuth(function(user, pass) {     
-		for (var i=0; i<basic_auth_users.length; i++) {
-			if (user==basic_auth_users[i][0] && pass==basic_auth_users[i][1]) return true;
-		}
-		return false;
-	},'SiSSYFiGHT testing');
+function basicAuth(req, res, next) {
+	var header = req.get('authorization') || '';
+	var match = /^Basic (.+)$/.exec(header);
+	if (match) {
+		var decoded = Buffer.from(match[1], 'base64').toString();
+		var sep = decoded.indexOf(':');
+		var user = decoded.slice(0, sep), pass = decoded.slice(sep + 1);
+		if (_.some(config.basicAuth, function(login) { return login[0] === user && login[1] === pass; })) return next();
+	}
+	res.set('WWW-Authenticate', 'Basic realm="SiSSYFiGHT testing"');
+	res.status(401).send('Unauthorized');
 }
 
 
-// session store
-var redisClient;
-var sissyfight_redis_str = process.env.SISSYFIGHT_REDIS;
-if (sissyfight_redis_str) {
-	var sissyfight_redis = sissyfight_redis_str.split('|'); // redis|host|port|database|auth|
-	redisClient = redis.createClient(sissyfight_redis[2], sissyfight_redis[1]); // port, host
-	redisClient.auth(sissyfight_redis[4], function (err) {
-		if (err) {
-			console.log('redis connection trouble');
-			throw(err);
-		}
-		else {
-			console.log('remote redis authenticated');
-		}
-	});
-}
-else {
-	redis.createClient(6379, 'localhost')
-	console.log('connected to local redis');
-}
-//var sessionStore = new RedisStore({ host: 'localhost', port: 6379, client: redis }); //new express.session.MemoryStore();
-var sessionStore = new RedisStore({client:redisClient});
+// session store: sessions live in MySQL alongside everything else
+var sessionPool = mysql.createPool({
+	host: config.db.host,
+	port: config.db.port,
+	user: config.db.user,
+	password: config.db.password,
+	database: config.db.database,
+	ssl: config.db.ssl ? {rejectUnauthorized: true} : undefined,
+	connectionLimit: 5
+});
+var sessionStore = new MySQLStore({
+	expiration: 12*60*60*1000,
+	clearExpired: true,
+	checkExpirationInterval: 15*60*1000,
+	createDatabaseTable: true
+}, sessionPool);
 app.set('sessionStore', sessionStore);
 
 // all environments
-app.set('port', process.env.PORT || 3000);
+app.set('port', config.port);
 app.set('views', __dirname + '/views');
+
+
+// health check for the load balancer: is the app up and can it reach the database?
+app.get('/healthz', function(req, res) {
+	db.sequelize.query('SELECT 1').then(function() {
+		res.send('ok');
+	}, function(err) {
+		console.log('healthz: database check failed: ' + err);
+		res.status(503).send('database unavailable');
+	});
+});
 
 
 var assetCacheTime = 60 * 60 * 1000; // one hour timeout during dev, change to a week or so when things are stable: 7 * 24 * 60 * 60 * 1000; // one week
 app.use(express.static(path.join(__dirname, 'public'), {maxAge: assetCacheTime}));
+app.use('/vendor/sockjs-client', express.static(path.dirname(require.resolve('sockjs-client/dist/sockjs.min.js')), {maxAge: assetCacheTime}));
 
 // add authentication if set up
-if (basic_auth) app.use(basic_auth);
+if (config.basicAuth) app.use(basicAuth);
 
-app.use(express.favicon());
-app.use(express.logger('dev'));
-app.use(express.bodyParser());
-app.use(express.methodOverride());
+if (process.env.NODE_ENV !== 'test') app.use(morgan(config.production ? 'combined' : 'dev'));
+app.use(express.urlencoded({extended: false}));
+app.use(express.json());
 app.set('cookiekey', 'sf2k');
-app.use(express.cookieParser());  // vvvv---- move to secret config
-app.use(express.session({store: sessionStore // http://stackoverflow.com/questions/14014446/how-to-save-and-retrieve-session-from-redis
-						, key: app.get('cookiekey')
-						, secret: 'I like bananas'
-						, maxAge:12*60*60*1000
-						//, expires: new Date(Date.now() + (12*60*1000))
-						, cookie:{maxAge:12*60*60*1000}})); // http://www.senchalabs.org/connect/session.html    http://stackoverflow.com/a/11827382
-app.use(app.router);
-
-
-
-
-// development only
-if ('development' == app.get('env')) {
-  app.use(express.errorHandler());
-}
+app.use(session({store: sessionStore
+				, name: app.get('cookiekey')
+				, secret: config.sessionSecret
+				, resave: false
+				, saveUninitialized: false
+				, cookie: {maxAge: 12*60*60*1000, httpOnly: true, sameSite: 'lax', secure: config.production ? 'auto' : false}}));
 
 
 // set up page controllers
@@ -133,14 +126,10 @@ sockjs_controllers.init(app, sockjs);
 
 
 // catchall
-app.get('/user/*', function(req, res) {
+app.get('/user/*splat', function(req, res) {
 	res.redirect('/');
 });
 
-/*app.post('/user/new', user.createUser);
-app.post('/user/login', user.login);
-app.post('/user/logout', user.logout);
-*/
 
 // supposed to install sockjs handlers last
 var server = http.createServer(app);
@@ -167,25 +156,48 @@ app.set('getSchoolInfo', function(id) {
 
 // username rules
 app.set('usernameRules', {minlength: 2, maxlength: 13, chars: "[A-Za-z0-9 !@#$_%^&*()+;:'<>\/\?\-]" });
-            
 
-/*
-// make a lobby room
-var ChatRoom = require('./gameObjects/chatroom');
-var lobby = new ChatRoom({name:'lobby', id:1});
 
-// make a game room
-var GameRoom = require('./gameObjects/gameroom');
-var gameroom = new GameRoom({name:'gameroom', id:3, schoolId:666, maxUsers: 6});
-app.set('lobby', gameroom);
-*/
+// start listening, and schedule the monthly score rollover.
+// Game state lives in this process, so run exactly one instance.
+var rolloverJob;
+function start(port) {
+	var schedule = require('node-schedule');
+	rolloverJob = schedule.scheduleJob({date: 1, hour: 4, minute: 0}, function() {
+		Rankings.rollover();
+	});
 
-server.listen(app.get('port'), function(){
-  console.log('Express server listening on port ' + app.get('port'));
-});
-/*server.on("listening", function() {
-  console.log("Server fired listening event");  // now it's really started
-});
-*/
-module.exports = server; // export it for test suite
+	function shutdown(signal) {
+		console.log(signal + ': shutting down');
+		stop().then(function() { process.exit(0); }, function() { process.exit(1); });
+		setTimeout(function() { process.exit(0); }, 3000).unref();
+	}
+	process.on('SIGTERM', shutdown);
+	process.on('SIGINT', shutdown);
 
+	return new Promise(function(resolve) {
+		server.listen(port === undefined ? app.get('port') : port, function() {
+			console.log('Express server listening on port ' + server.address().port);
+			resolve(server);
+		});
+	});
+}
+
+// close database pools (for tests)
+function stop() {
+	if (rolloverJob) rolloverJob.cancel();
+	return new Promise(function(resolve) {
+		if (server.listening) {
+			server.close(function() { resolve(); });
+			server.closeAllConnections();
+		}
+		else resolve();
+	}).then(function() {
+		// the store doesn't end a pool it was handed, so end it here
+		return Promise.all([sessionStore.close().then(function() { return sessionPool.end(); }), db.sequelize.close()]);
+	});
+}
+
+if (require.main === module) start();
+
+module.exports = {app: app, server: server, start: start, stop: stop}; // export it for test suite

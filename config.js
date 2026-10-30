@@ -1,34 +1,83 @@
 /*
-	config: place where all the configuration stuff should go eventually.
+	config: all environment-driven configuration lives here.
+
+	Environment variables:
+		DATABASE_URL		mysql://user:password@host:3306/database
+		SISSYFIGHT_DB		legacy form: mysql|host|database|user|password (used if DATABASE_URL is unset)
+		DB_SSL				set to "true" to require TLS to MySQL (needed for Azure Database for MySQL)
+		SESSION_SECRET		secret for signing session cookies (required in production)
+		SENDGRID_API_KEY	SendGrid API key, sent over SMTP
+		SISSYFIGHT_MAILER	legacy form: service|user|password (any nodemailer well-known service)
+		MAIL_TRANSPORT		set to "json" to log emails instead of sending them (dev/test)
+		PUBLIC_URL			base URL used in emailed links, e.g. https://play.sissyfight.com
+		BASIC_AUTH			optional closed-testing logins: user,password[|user,password...]
+		PORT				http port (default 3000)
 */
 var fs = require('fs');
+var path = require('path');
+
+var env = process.env;
+var production = env.NODE_ENV === 'production';
+
+exports.production = production;
+exports.port = parseInt(env.PORT, 10) || 3000;
+exports.publicUrl = (env.PUBLIC_URL || ('http://localhost:' + exports.port)).replace(/\/$/, '');
 
 
-// email credentials: SISSYFIGHT_MAILER=service|user|password
-//		service is one of nodemailer's Known Services - if we switch to a service not in their list, this variable will have to change
-var email_info_str = process.env.SISSYFIGHT_MAILER;
-if (!email_info_str) {
-	console.log("Missing environment variable SISSYFIGHT_MAILER");
-	exports.email = null;
+// database
+function parseDatabase() {
+	if (env.DATABASE_URL) {
+		var url = new URL(env.DATABASE_URL);
+		return {
+			host: url.hostname,
+			port: url.port ? parseInt(url.port, 10) : 3306,
+			database: decodeURIComponent(url.pathname.replace(/^\//, '')),
+			user: decodeURIComponent(url.username),
+			password: decodeURIComponent(url.password)
+		};
+	}
+	if (env.SISSYFIGHT_DB) {
+		var parts = env.SISSYFIGHT_DB.split('|'); // dialect|hostname|database name|username|password
+		return {host: parts[1], port: 3306, database: parts[2], user: parts[3], password: parts[4]};
+	}
+	throw new Error("Missing database configuration: set DATABASE_URL (or SISSYFIGHT_DB)");
+}
+exports.db = parseDatabase();
+exports.db.ssl = env.DB_SSL === 'true';
+
+
+// sessions
+if (!env.SESSION_SECRET && production) throw new Error("Missing SESSION_SECRET");
+if (!env.SESSION_SECRET) console.log("SESSION_SECRET not set - using an insecure development secret");
+exports.sessionSecret = env.SESSION_SECRET || 'insecure-development-secret';
+
+
+// email
+if (env.MAIL_TRANSPORT === 'json') {
+	exports.email = {transport: {jsonTransport: true}};
+}
+else if (env.SENDGRID_API_KEY) {
+	exports.email = {transport: {service: 'SendGrid', auth: {user: 'apikey', pass: env.SENDGRID_API_KEY}}};
+}
+else if (env.SISSYFIGHT_MAILER) {
+	// service is one of nodemailer's well-known services
+	var email_info = env.SISSYFIGHT_MAILER.split('|');
+	exports.email = {transport: {service: email_info[0], auth: {user: email_info[1], pass: email_info[2]}}};
 }
 else {
-	var email_info = email_info_str.split('|');
+	console.log("No email configured (SENDGRID_API_KEY) - password reset emails are disabled");
+	exports.email = null;
+}
 
-	exports.email = {
-		transport: {
-			service: email_info[0],
-			auth: {
-				user: email_info[1],
-				pass: email_info[2]
-			}
-		}
-	}
-	
-};
+
+// optional basic auth for closed testing sessions: [[username, password], ...]
+exports.basicAuth = env.BASIC_AUTH ? env.BASIC_AUTH.split('|').map(function(userAndPassword) {
+	return userAndPassword.split(',');
+}) : null;
 
 
 exports.schools = {
-	
+
 	// names for rooms the server will create if all existing rooms are full
 	roomNames: {
 		'666': 'Sacrifice Altar, My Dark Master, Lockdown, Surveillance, No Fun For You, Tattoo Corner, Will to Survive, Sissy Fortress, Visiting Hours, Exercise Period, The Pentagram, Witchcraft 101, Curses!, Unholy Glee, HellfireClub, The Pit, Deadly Seven, Fangs R Us'.split(/,\s*/),
@@ -36,7 +85,7 @@ exports.schools = {
 		'angel': 'Aww Gee Whiz!, Snugglebumpkins, Fuzzy Things, Nice Dress!, Cheerleading, I Luv Ponies, Teddy Bears, Happy Flowers, Who\'s Richer?, Gossip, Boys Are Icky, Popularity 101, Pep Squad, Good Clean Fun, Pretty Rainbows, BMW Bike Club, Straight A Club, Smile Every Day'.split(/,\s*/),
 		'suzy': 'Aww Gee Whiz!, Snugglebumpkins, Fuzzy Things, Nice Dress!, Cheerleading, I Luv Ponies, Teddy Bears, Happy Flowers, Who\'s Richer?, Gossip, Boys Are Icky, Popularity 101, Pep Squad, Good Clean Fun, Pretty Rainbows, BMW Bike Club, Straight A Club, Smile Every Day'.split(/,\s*/),
 	}
-	
+
 };
 
 
@@ -54,10 +103,6 @@ exports.avatar.number.of = {
 	expression:		7,
 	pose:			9
 }
-// medium-ugly way to incorporate addons.js
-// todo: find a nicer way!
-var f = function() {
-	var config = {};
-	eval(fs.readFileSync('public/client/addons.js').toString());
-	exports.avatar.addons = config.addons;
-}();
+// public/client/addons.js is a browser script of the form `config.addons = [...json...];`
+var addonsSource = fs.readFileSync(path.join(__dirname, 'public/client/addons.js'), 'utf8');
+exports.avatar.addons = JSON.parse(addonsSource.replace(/^\s*config\.addons\s*=\s*/, '').replace(/;\s*$/, ''));
