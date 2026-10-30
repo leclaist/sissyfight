@@ -1,0 +1,16 @@
+.git
+.gitignore
+.dockerignore
+Dockerfile
+docker-compose.yml
+docker
+node_modules
+npm-debug.log
+test
+scripts/dev-bots.js
+README.md
+messages.md
+rankings.md
+scenes.md
+public/client/avatarSpreadsheet.py
+.DS_Store

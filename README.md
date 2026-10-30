@@ -22,6 +22,20 @@ docker compose up                        # http://localhost:3000 (APP_PORT=3100 
 docker compose run --rm app npm test     # game engine + server tests against MySQL
 ```
 
+### docker image
+
+The [Dockerfile](Dockerfile) builds the production image. On startup the container runs `npm run db:setup` and then the server. Azure Container Apps runs `linux/amd64`, so from an Apple Silicon Mac:
+
+```
+docker buildx build --platform linux/amd64 -t sissyfight .
+# or build in Azure Container Registry directly:
+az acr build --registry <your-acr> --image sissyfight:<tag> .
+```
+
+To try the production image locally against the compose database: `docker compose --profile image up --build image` (http://localhost:3001).
+
+Run exactly one replica (game rooms live in memory), route WebSockets through the ingress, and use `/healthz` for health probes.
+
 `npm run db:setup` creates the tables and default texts from [database_tables.sql](database_tables.sql). It is safe to run on every deploy.
 
 ### configuration

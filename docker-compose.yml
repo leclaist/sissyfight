@@ -37,6 +37,22 @@ services:
       db:
         condition: service_healthy
 
+  # the production image, run against the local database:
+  #   docker compose --profile image up --build image    -> http://localhost:3001
+  image:
+    profiles: ["image"]
+    build: .
+    environment:
+      DATABASE_URL: mysql://sissyfight:sissyfight@db:3306/sissyfight
+      SESSION_SECRET: local-image-test-secret
+      PUBLIC_URL: http://localhost:3001
+      MAIL_TRANSPORT: json
+    ports:
+      - "3001:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
 volumes:
   db-data:
   node-modules:

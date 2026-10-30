@@ -167,11 +167,13 @@ function start(port) {
 		Rankings.rollover();
 	});
 
-	process.on('SIGTERM', function() {
-		console.log('SIGTERM: shutting down');
-		server.close();
+	function shutdown(signal) {
+		console.log(signal + ': shutting down');
+		stop().then(function() { process.exit(0); }, function() { process.exit(1); });
 		setTimeout(function() { process.exit(0); }, 3000).unref();
-	});
+	}
+	process.on('SIGTERM', shutdown);
+	process.on('SIGINT', shutdown);
 
 	return new Promise(function(resolve) {
 		server.listen(port === undefined ? app.get('port') : port, function() {
