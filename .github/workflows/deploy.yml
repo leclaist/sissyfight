@@ -1,0 +1,62 @@
+name: Deploy
+
+# Runs only after CI passes on a push to master, so a commit with failing
+# tests can't reach production.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [master]
+
+permissions:
+  id-token: write # OIDC login to Azure
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to Azure Container Apps
+    # skipped until the Azure OIDC variables are configured (see README)
+    if: github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push' && vars.AZURE_CLIENT_ID != ''
+    runs-on: ubuntu-latest
+    concurrency: deploy
+    env:
+      # the exact commit CI tested
+      SHA: ${{ github.event.workflow_run.head_sha }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Build image in ACR and roll out
+        run: |
+          az config set extension.use_dynamic_install=yes_without_prompt
+          infra/deploy.sh "${SHA::7}"
+
+      - name: Wait for the new revision to be healthy
+        run: |
+          REV=$(az containerapp show -n sissyfight -g sissyfight-rg --query properties.latestRevisionName -o tsv)
+          echo "revision $REV"
+          for i in $(seq 1 30); do
+            STATE=$(az containerapp revision show -n sissyfight -g sissyfight-rg --revision "$REV" --query "[properties.runningState, properties.healthState]" -o tsv | tr '\n\t' '  ')
+            echo "$STATE"
+            case "$STATE" in *Running*Healthy*) exit 0;; *Failed*|*Unhealthy*) exit 1;; esac
+            sleep 10
+          done
+          exit 1
+
+      - name: Smoke test
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf https://sissyfight2026.lol/healthz && curl -sf -o /dev/null https://sissyfight2026.lol/main; then
+              echo " - live"; exit 0
+            fi
+            sleep 10
+          done
+          echo "site did not become healthy" >&2
+          exit 1

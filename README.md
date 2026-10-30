@@ -65,4 +65,8 @@ terraform output dns_records                               # A + TXT records to 
 ../infra/bind-domain.sh                                     # once DNS resolves: custom domain + managed certificate
 ```
 
-After that, `infra/deploy.sh` builds the current commit and rolls the app onto it. Terraform state and `terraform.tfvars` hold secrets and are gitignored.
+After that, `infra/deploy.sh` builds the current commit and rolls the app onto it.
+
+### continuous deployment
+
+[CI](.github/workflows/ci.yml) runs the tests (against a MySQL service) and builds the Docker image on every push and pull request. When CI passes on `master`, [Deploy](.github/workflows/deploy.yml) builds the image in ACR, rolls the container app onto it, waits for the new revision to be healthy, and smoke-tests the site. It logs in to Azure with OpenID Connect, using these repository variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`. The deploy job is skipped until they are set. Terraform state and `terraform.tfvars` hold secrets and are gitignored.
