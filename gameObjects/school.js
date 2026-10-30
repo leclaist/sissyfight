@@ -5,6 +5,7 @@
 var Homeroom = require('./homeroom');
 var GameRoom = require('./gameroom');
 var SFGame = require('./sfgame');
+var BotManager = require('../bots/manager');
 
 var config = require('../config');
 
@@ -12,6 +13,7 @@ var _ = require('lodash');
 
 // globals
 School.EMPTY_ROOM_PURGE_TIME = 30; // get rid of an empty room after 30 seconds
+School.BOT_ROOM_NAME = 'Robo Recess';
 
 function School(params) {
 	this.id = params.id;
@@ -24,6 +26,9 @@ function School(params) {
 	
 	// names for new rooms
 	this.game_names = config.schools.roomNames[this.base_id].slice(0); // slice(0) effectively creates a clone of original list
+	
+	// computer players
+	this.bots = config.bots.enabled ? new BotManager(this) : null;
 	
 	// timer for periodic updates
 	this.interval = setInterval(this.update.bind(this), 5000); 
@@ -79,6 +84,7 @@ School.prototype.createGame = function(params, done) {
 	this.games[params.id] = game;
 	
 	game.on('update', this.gameUpdateListener.bind(this));
+	if (this.bots) this.bots.watch(game);
 	game.start();
 	
 	if (done) done(null, game);
@@ -116,8 +122,13 @@ School.prototype.gameUpdateListener = function(event) {
 
 // periodic maintenance: throw away old empty (normal) game rooms, but make sure there's always at least one empty room with normal rules.  
 School.prototype.update = function() {
+	this.updateBotRooms();
+	
 	// find rooms that have been empty for more than threshold time
 	_.each(this.games, function(game) {
+		if (game.bots) {
+			return; // bot rooms are managed by updateBotRooms
+		}
 		if (game.getInfo().occupants.length > 0) {
 			game._lastOccupiedTime = process.uptime(); // in seconds
 			game._purgeable = false;
@@ -153,6 +164,23 @@ School.prototype.update = function() {
 	}
 }
 
+
+
+// keep exactly one empty bot room around, so there's always one ready to play in
+School.prototype.updateBotRooms = function() {
+	if (!this.bots) return;
+	var botRooms = _.filter(this.games, 'bots');
+	var empty = _.filter(botRooms, function(game) { return game.occupants.length == 0; });
+	if (empty.length == 0) {
+		var name = School.BOT_ROOM_NAME;
+		if (botRooms.length > 0) name += ' ' + (botRooms.length + 1);
+		this.createGame({name: name, bots: true});
+	}
+	else {
+		// extra empty bot rooms go away, newest first
+		_.sortBy(empty, 'id').slice(1).forEach(function(game) { this.destroyGame(game); }.bind(this));
+	}
+}
 
 
 module.exports = School;

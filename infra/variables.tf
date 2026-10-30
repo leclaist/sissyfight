@@ -33,6 +33,13 @@ variable "domain" {
   default     = "sissyfight2026.lol"
 }
 
+variable "anthropic_api_key" {
+  description = "Anthropic API key for bot players' moves and chat (optional; without it bots play randomly and stay quiet)"
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
 variable "sendgrid_api_key" {
   description = "SendGrid API key for password reset emails (optional; leave empty to disable email)"
   type        = string

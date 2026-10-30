@@ -14,6 +14,9 @@ function GameRoom(params) {
 	// custom rules
 	this.custom = params && params.custom;
 	
+	// bot rooms always have computer players ready to play
+	this.bots = !!(params && params.bots);
+	
 	// room access
 	this.password = undefined; 	// not used yet
 	this.blockedUsers = []; 	// list of ids of users who've been booted from the room
@@ -59,6 +62,7 @@ GameRoom.prototype.getInfo = function(avatars) {
 	
 	// add custom game rules to info
 	if (this.custom) info.custom = this.custom;
+	if (this.bots) info.bots = true;
 	
 	if (avatars) {
 		// add startVotes and bootVotes to info so latecomers to game can see who has already pressed start and who's getting booted

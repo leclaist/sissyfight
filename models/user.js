@@ -119,6 +119,7 @@ User.checkNicknameAndEmail = function(nickname, email, callback) {
 		return {submitted:nickname, error:"validation", msg:validation.errors[0].message};
 	}).then(function(status) {
 		if (status) return status;
+		if (/^robo/i.test(nickname)) return {submitted:nickname, error:"validation", msg:"Names starting with Robo are for bots"};
 		// check if exists
 		return User.findOne({where: {nickname: nickname}}).then(function(user) {
 			if (user) return {submitted:nickname, error: "taken", msg:"That nickname's already taken"};
@@ -144,6 +145,8 @@ User.createUser = function(userdata, callback) {
 
 
 User.recordScore = function(userID, points, win, solo) {
+	if (userID < 0) return Promise.resolve(); // bots have negative ids and aren't ranked
+	
 	var query = 'UPDATE Users '
 		+ 'SET month_points = month_points + :points, alltime_points = alltime_points + :points,'
 		+ ' month_games = month_games + 1, alltime_games = alltime_games + 1'

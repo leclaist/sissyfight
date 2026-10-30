@@ -158,6 +158,7 @@ test('checkNameDOB validates age and nickname', async function() {
 	assert.strictEqual((await check('bad{name')).json.message, 'Illegal character in nickname');
 	assert.strictEqual((await check('two  spaces')).json.message, "Nickname can't have two spaces in a row");
 	assert.strictEqual((await check("ok!name's")).json.ok, true);
+	assert.strictEqual((await check('robobecky')).json.message, 'Names starting with Robo are for bots');
 	assert.deepStrictEqual((await b.post('/u/checkNameDOB', {})).json, {ok: false});
 });
 

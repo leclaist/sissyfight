@@ -58,8 +58,9 @@ ChatRoom.prototype.getInfo = function() {
 	return {room:this.id, roomName:this.name, occupants:this.getOccupantProperties(['id','nickname']), type:"ChatRoom"};
 }
 
+// number of people in the room (bots don't count)
 ChatRoom.prototype.getPopulation = function() {
-	return this.occupants.length;
+	return _.reject(this.occupants, 'isBot').length;
 }
 
 

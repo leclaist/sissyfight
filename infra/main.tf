@@ -159,6 +159,14 @@ resource "azurerm_container_app" "main" {
   }
 
   dynamic "secret" {
+    for_each = var.anthropic_api_key != "" ? [1] : []
+    content {
+      name  = "anthropic-api-key"
+      value = var.anthropic_api_key
+    }
+  }
+
+  dynamic "secret" {
     for_each = var.sendgrid_api_key != "" ? [1] : []
     content {
       name  = "sendgrid-api-key"
@@ -192,6 +200,13 @@ resource "azurerm_container_app" "main" {
       env {
         name        = "SESSION_SECRET"
         secret_name = "session-secret"
+      }
+      dynamic "env" {
+        for_each = var.anthropic_api_key != "" ? [1] : []
+        content {
+          name        = "ANTHROPIC_API_KEY"
+          secret_name = "anthropic-api-key"
+        }
       }
       dynamic "env" {
         for_each = var.sendgrid_api_key != "" ? [1] : []
