@@ -120,7 +120,7 @@ BotPlayer.prototype.handleEvent = function(type, data) {
 				this.turn++;
 				// the first turn starts inside SFGame's constructor, before GameRoom
 				// has stored the game in room.game, so wait a tick
-				setImmediate(this.playTurn.bind(this, this.turn));
+				setImmediate(this.playTurn.bind(this, this.turn, data.time));
 				break;
 			case 'endTurn':
 				this.lastTurn = _.compact(_.map(data.results, 'text'));
@@ -157,7 +157,8 @@ BotPlayer.prototype.gameState = function() {
 	};
 };
 
-BotPlayer.prototype.playTurn = function(turn) {
+// seconds: length of the turn
+BotPlayer.prototype.playTurn = function(turn, seconds) {
 	var bot = this, game = this.room.game;
 	var state = this.gameState();
 	if (!state) return; // out of the game
@@ -165,9 +166,10 @@ BotPlayer.prototype.playTurn = function(turn) {
 	if (me.loser || me.zombie) return;
 
 	var started = Date.now();
+	var delay = this.manager.moveDelay(seconds || 90);
 	brain.decideMove(this, state).then(function(move) {
-		// take a few seconds like a person would, even if the model was fast
-		var wait = Math.max(0, bot.manager.thinkDelay() - (Date.now() - started));
+		// decide right away, but make the move later in the turn, like a person would
+		var wait = Math.max(0, delay - (Date.now() - started));
 		setTimeout(function() {
 			if (!bot.inRoom() || bot.room.game !== game || bot.turn !== turn) return;
 			bot.room.act(bot.conn, {action: move.action, target: move.target});

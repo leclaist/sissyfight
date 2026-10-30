@@ -52,6 +52,15 @@ BotManager.prototype.thinkDelay = function() {
 	return config.bots.thinkDelayMs;
 };
 
+// when a bot makes her move in a turn of `seconds`: somewhere between ~8 and
+// ~30 seconds into a normal 90-second turn (less in short special-rules turns),
+// so a person picking her move doesn't set off the final countdown right away
+BotManager.prototype.moveDelay = function(seconds) {
+	if (!config.bots.paceTurns) return this.thinkDelay();
+	var earliest = Math.min(8, seconds * 0.4), latest = Math.min(30, seconds * 0.7);
+	return 1000 * (earliest + Math.random() * (latest - earliest));
+};
+
 BotManager.prototype.humans = function(room) {
 	return room.occupants.filter(function(conn) { return !conn.isBot; });
 };

@@ -27,6 +27,7 @@ const config = require('../config');
 config.bots.thinkDelayMs = 0;
 config.bots.fillDelayMs = 50;
 config.bots.replyGapMs = 30;
+config.bots.paceTurns = false;
 
 const brain = require('../bots/brain');
 const School = require('../gameObjects/school');
@@ -348,4 +349,21 @@ test('bots fill a regular room to 5 after a human waits, and stay out once boote
 	room.leave(friend);
 	await settle();
 	assert.strictEqual(room.occupants.length, 0);
+});
+
+test('bots spread their moves over the turn', function() {
+	const BotManager = require('../bots/manager');
+	const manager = new BotManager({games: {}});
+	config.bots.paceTurns = true;
+	try {
+		for (let i = 0; i < 200; i++) {
+			const normal = manager.moveDelay(90);
+			assert.ok(normal >= 8000 && normal <= 30000, 'normal turn: ' + normal);
+			const quick = manager.moveDelay(15);
+			assert.ok(quick >= 6000 && quick <= 10500, '15s turn: ' + quick);
+		}
+	}
+	finally {
+		config.bots.paceTurns = false;
+	}
 });

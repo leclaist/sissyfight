@@ -22,6 +22,9 @@ var _ = require('lodash');
 
 var text = require('../models/text');
 
+// changes on every deploy/restart, so browsers fetch new game scripts instead of cached ones
+var assetVersion = Date.now().toString(36);
+
 // helper: check that all listed arguments are strings
 function checkArgs(body, args) {
 	if (!body) return false;
@@ -86,12 +89,13 @@ module.exports = function(app) {
 	
 	// reset password stage 2 page
 	app.get('/reset/:code', function(req, res) {
-		req.session.destroy();
-		var context = {
-			includes: includes,
-			code: req.params.code
-		};
-		res.render('resetpw.html', context);
+		req.session.destroy(function() {
+			var context = {
+				includes: includes,
+				code: req.params.code
+			};
+			res.render('resetpw.html', context);
+		});
 	});
 	
 	// site pages
@@ -213,7 +217,8 @@ module.exports = function(app) {
 				school:req.session.school, 
 				gameScale:gameScale, gameWidth:gameWidth, gameHeight:gameHeight,
 				singleSize: (gameScale==1),
-				doubleSize: (gameScale==2)	
+				doubleSize: (gameScale==2),
+				assetVersion: assetVersion
 			};
 			text.retrieve('homepage-news', function(err,texts) {
 				if (!err) context.news = texts['homepage-news'];
@@ -434,14 +439,14 @@ module.exports = function(app) {
 	
 
 	
-	app.get('/user/logout', function(req, res) {
-		req.session.destroy();
-		res.redirect('/main');// + qs.stringify(req.query));
-	});
-	app.post('/user/logout', function(req, res) {
-		req.session.destroy();
-		res.redirect('/main'); //' + qs.stringify(req.query));
-	});
+	// respond once the session is really gone, so the next request isn't still logged in
+	function logout(req, res) {
+		req.session.destroy(function() {
+			res.redirect('/main');
+		});
+	}
+	app.get('/user/logout', logout);
+	app.post('/user/logout', logout);
 	
 
 }
