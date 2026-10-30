@@ -117,7 +117,7 @@ SFGame.sanitizeNewGameParams = function(args) {
 		var custom = {};
 		
 		// confirm turn time, just default to 90 if user submitted bad value
-		if (_.contains(SFGame.CUSTOM_RULE_RESTRICTIONS.turnTimes, parseInt(args.custom.turnTime))) custom.turnTime = args.custom.turnTime;
+		if (_.includes(SFGame.CUSTOM_RULE_RESTRICTIONS.turnTimes, parseInt(args.custom.turnTime))) custom.turnTime = args.custom.turnTime;
 		else custom.turnTime = SFGame.TURN_TIME;
 		
 		// assume moves legal unless listed in args.custom.moves as 0
@@ -129,7 +129,7 @@ SFGame.sanitizeNewGameParams = function(args) {
 				custom.moves[move]=1;
 				yesMoves.push(move);
 			}
-		},this);
+		}.bind(this));
 		
 		// check it's not a stupid rule combo
 		var bad = false;
@@ -138,7 +138,7 @@ SFGame.sanitizeNewGameParams = function(args) {
 				bad = true;
 				return false; // lodash equivalent of break
 			}
-		}, this);
+		}.bind(this));
 		
 		// if bad rule combo, just make a non-custom game.
 		if (!bad) params.custom = custom;
@@ -251,7 +251,7 @@ SFGame.prototype.overrideTimeout = function() {
 // status message has arg status:{[userid]:{health:[health]}...}
 SFGame.prototype.broadcastStatus = function() {
 	var statusEvent = {};
-	_.each(this.players, function(info, id) {statusEvent[id] = {health:info.health}}, this);
+	_.each(this.players, function(info, id) {statusEvent[id] = {health:info.health}}.bind(this));
 	this.gameEvent('status', {status:statusEvent}); 
 }
 
@@ -268,7 +268,7 @@ SFGame.prototype.prepareGame = function() {
 			if (this.custom.moves['tattle']==0) this.players[conn.user.id].tattles = 0;
 		}
 		
-	}, this);
+	}.bind(this));
 }
 
 
@@ -286,9 +286,9 @@ SFGame.prototype.startTurn = function() {
 		info.timeout = false;
 		
 		if (info.zombie) this.zombies.push(info);
-	}, this);
+	}.bind(this));
 	// now remove the zombies from players
-	_.forOwn(this.zombies, function(zombie){ delete this.players[zombie.id]}, this);
+	_.forOwn(this.zombies, function(zombie){ delete this.players[zombie.id]}.bind(this));
 	
 	
 	
@@ -387,22 +387,22 @@ SFGame.prototype.resolveTurnStage1 = function(narrative, actions) {
 	_.each(this.players, function(playerInfo){ 
 		this.resetTurnResolution(playerInfo);
 		actions.push(playerInfo)
-	}, this);
+	}.bind(this));
 	
 	// convert action targets from userIDs to references to other players in this array
 	//   and add sort order for sorting
 	_.each(actions, function(playerInfo) { 
 		// target should always be valid, because we tested it in SFGame.act()
-		if (playerInfo.target) playerInfo.target = _.findWhere(actions, {id:playerInfo.target});
+		if (playerInfo.target) playerInfo.target = _.find(actions, {id:playerInfo.target});
 
 		playerInfo.sortOrder = SFGame.ACTION_ORDER[playerInfo.action];
 		if (!playerInfo.sortOrder) playerInfo.sortOrder = 1000; // invalid actions get sorted to end
 		playerInfo.sortOrder += Math.random();		// add random jitter so identical moves get ordered unpredictably
-	}, this);
+	}.bind(this));
 
 	actions = _.sortBy(actions, 'sortOrder');
 	
-	_.each(actions, function(act){this.testActionStage1(narrative, act)}, this);
+	_.each(actions, function(act){this.testActionStage1(narrative, act)}.bind(this));
 }
 
 
@@ -578,11 +578,11 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 
 	// need to know if there was a successful tattle now to decide if cower was productive
 	// compute # of tattlers
-	var tattleSize = _.where(actions, {action:'tattle'}).length;
+	var tattleSize = _.filter(actions, {action:'tattle'}).length;
 	var successfulTattle = (tattleSize==1);
 	
 	// find unresolved cowers
-	var cowerers = _.where(actions, {action:'cower', resolved:false});
+	var cowerers = _.filter(actions, {action:'cower', resolved:false});
 	
 	// reset cowardice counter for those who didn't cower or cowered productively
 	_.each(actions, function(act) {if (act.action != 'cower' || act.resolved) act.cowardice = 0 });
@@ -627,7 +627,7 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 				
 			}
 		}
-	}, this);
+	}.bind(this));
 	
 	
 	
@@ -655,7 +655,7 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 			});
 		}
 			
-	}, this);
+	}.bind(this));
 	
 	
 	// SCENES 2-13: Scratch and/or grab with optional lolly
@@ -670,10 +670,10 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 			// resolve those which remain
 			_.each(victim.scratchers, function(scratcher) {
 				scratcher.resolved = true;
-			}, this);
+			}.bind(this));
 			_.each(victim.grabbers, function(grabber) {
 				grabber.resolved = true;
-			}, this);
+			}.bind(this));
 			
 			// just in case they all got removed:
 			if (victim.scratchers.length==0 && victim.grabbers.length==0) {
@@ -683,7 +683,7 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 			
 				// OK, you have a player who has been grabbed and/or scratched by at least one attacker.
 		
-				var code = {victim: victim.id, grabbers: _.pluck(victim.grabbers, 'id'), scratchers: _.pluck(victim.scratchers, 'id')};
+				var code = {victim: victim.id, grabbers: _.map(victim.grabbers, 'id'), scratchers: _.map(victim.scratchers, 'id')};
 				
 				// If player had a lolly, it's gone now!
 				victim.lostLolly = true;
@@ -706,7 +706,7 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 						damage[victim.id] = victim.scratchers.length * SFGame.DAMAGE_LOLLY_SCRATCH;
 						narrative.push({
 							scene: 'grabscratch', // 11 or 12
-							text: _.pluck(victim.scratchers, 'nickname').join(' and ') + ' scratched ' + victim.nickname + " and she choked on her lollipop, suffering extra humiliation.",
+							text: _.map(victim.scratchers, 'nickname').join(' and ') + ' scratched ' + victim.nickname + " and she choked on her lollipop, suffering extra humiliation.",
 							code: code,
 							damage: damage
 						});
@@ -720,7 +720,7 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 						damage[victim.id] = (victim.grabbers.length-1) * SFGame.DAMAGE_GRAB;
 						narrative.push({
 							scene: 'grabscratch', // 6 or 7
-							text: _.pluck(victim.grabbers, 'nickname').join(' and ') + ' grabbed ' + victim.nickname + " and she couldn't lick her lollipop.",
+							text: _.map(victim.grabbers, 'nickname').join(' and ') + ' grabbed ' + victim.nickname + " and she couldn't lick her lollipop.",
 							code: code,
 							damage: damage
 						});
@@ -733,8 +733,8 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 						damage[victim.id] = victim.scratchers.length * SFGame.DAMAGE_GRAB_SCRATCH + (victim.grabbers.length-1) * SFGame.DAMAGE_GRAB;
 						narrative.push({
 							scene: 'grabscratch', // 13
-							text: _.pluck(victim.grabbers, 'nickname').join(' and ') + ' grabbed ' + victim.nickname 
-								+ ' and ' + _.pluck(victim.scratchers, 'nickname').join(' and ') + ' scratched her.  She never got to lick her lollipop.',
+							text: _.map(victim.grabbers, 'nickname').join(' and ') + ' grabbed ' + victim.nickname 
+								+ ' and ' + _.map(victim.scratchers, 'nickname').join(' and ') + ' scratched her.  She never got to lick her lollipop.',
 							code: code,
 							damage: damage
 						})
@@ -752,7 +752,7 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 						damage[victim.id] = victim.scratchers.length * SFGame.DAMAGE_SCRATCH;
 						narrative.push({
 							scene: 'grabscratch', // 8 or 9
-							text: _.pluck(victim.scratchers, 'nickname').join(' and ') + ' scratched ' + victim.nickname + ".",
+							text: _.map(victim.scratchers, 'nickname').join(' and ') + ' scratched ' + victim.nickname + ".",
 							code: code,
 							damage: damage
 						});
@@ -767,7 +767,7 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 						if (victim.interrupted) {
 							text = victim.nickname+" was going to "+victim.interrupted+" but "
 						}
-						text += _.pluck(victim.grabbers, 'nickname').join(' and ') + ' grabbed ' + victim.nickname + "."
+						text += _.map(victim.grabbers, 'nickname').join(' and ') + ' grabbed ' + victim.nickname + "."
 						narrative.push({
 							scene: 'grabscratch', // 2 or 3
 							text: text,
@@ -783,8 +783,8 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 						if (victim.interrupted) {
 							text = victim.nickname+" was going to "+victim.interrupted+" but "
 						}
-						text += _.pluck(victim.grabbers, 'nickname').join(' and ') + ' grabbed ' + victim.nickname 
-								+ ' and ' + _.pluck(victim.scratchers, 'nickname').join(' and ') + ' scratched her.',
+						text += _.map(victim.grabbers, 'nickname').join(' and ') + ' grabbed ' + victim.nickname 
+								+ ' and ' + _.map(victim.scratchers, 'nickname').join(' and ') + ' scratched her.',
 						damage[victim.id] = victim.scratchers.length * SFGame.DAMAGE_GRAB_SCRATCH + SFGame.DAMAGE_GRAB * (victim.grabbers.length-1);
 						narrative.push({
 							scene: 'grabscratch', // 10
@@ -797,7 +797,7 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 			} // end test: has remaining grabbers/scratchers after cleanup
 		} // end test: has grabbers and/or scratchers
 		
-	}, this); // end loop
+	}.bind(this)); // end loop
 	// END SCENES 2-13
 	
 	
@@ -835,7 +835,7 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 				teaser.resolved = true;
 			});
 		
-			var text =_.pluck(victim.teasers, 'nickname').join(" and ") + " teased " + victim.nickname + ".";
+			var text =_.map(victim.teasers, 'nickname').join(" and ") + " teased " + victim.nickname + ".";
 			var scene;
 			var damage;
 			var successful;
@@ -859,7 +859,7 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 			narrative.push({
 				scene: 'tease', // 15 or 16
 				text: text,
-				code: {victim:victim.id, teasers:_.pluck(victim.teasers, 'id'), teased:successful},
+				code: {victim:victim.id, teasers:_.map(victim.teasers, 'id'), teased:successful},
 				damage: damage
 			});
 		}
@@ -889,44 +889,44 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 					sufferers.push(player);
 			}
 		}
-	}, this);
+	}.bind(this));
 	
 	if (tattlers.length==1) {
 		// scene 17 successful tattle
 		_.each(sufferers, function(sufferer) {
 			damage[sufferer.id] = SFGame.DAMAGE_TATTLE;
-		}, this);
+		}.bind(this));
 		
 		text = tattlers[0].nickname + " tattled! ";
 		
 		if (sufferers.length > 0) {
-			text += _.pluck(sufferers, 'nickname').join(' and ') + ' got in trouble. ';
+			text += _.map(sufferers, 'nickname').join(' and ') + ' got in trouble. ';
 		}
 		
 		var lick_cowerers = lickers.concat(cowerers);
 		if (lick_cowerers.length > 0) {
-			text += _.pluck(lick_cowerers, 'nickname').join(' and ') + " looked innocent."
+			text += _.map(lick_cowerers, 'nickname').join(' and ') + " looked innocent."
 		}
 		
 		narrative.push({
 			scene: 'tattle', // 17
 			text: text,
-			code: {tattler:tattlers[0].id, victims:_.pluck(sufferers, 'id'), innocents:_.pluck(lick_cowerers, 'id')},
+			code: {tattler:tattlers[0].id, victims:_.map(sufferers, 'id'), innocents:_.map(lick_cowerers, 'id')},
 			damage: damage
 		});
 	}
 	else if (tattlers.length > 1) {
 		// scene 18: failed tattle
-		text = _.pluck(tattlers, 'nickname').join(' and ') + ' all tattled and got themselves in trouble!';
+		text = _.map(tattlers, 'nickname').join(' and ') + ' all tattled and got themselves in trouble!';
 		_.each(tattlers, function(tattler) {
 			damage[tattler.id] = SFGame.DAMAGE_FAILED_TATTLE;
-		}, this);
+		}.bind(this));
 		code = null; // TODO!!!
 		
 		narrative.push({
 			scene: 'failedtattle', // 18
 			text: text,
-			code: {tattlers: _.pluck(tattlers, 'id')},
+			code: {tattlers: _.map(tattlers, 'id')},
 			damage: damage
 		})
 	}
@@ -941,19 +941,19 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 			lickers.push(player);
 			damage[player.id] = SFGame.DAMAGE_LOLLY; // negative damage for lolly benefits!
 		}
-	}, this);
+	}.bind(this));
 	if (lickers.length > 0) {
 		var text;
 		if (lickers.length==1) {
 			text = lickers[0].nickname + " licked her lollipop and felt better.";
 		}
 		else {
-			text = _.pluck(lickers, 'nickname').join(' and ') + " all licked their lollipops and felt better.";
+			text = _.map(lickers, 'nickname').join(' and ') + " all licked their lollipops and felt better.";
 		}
 		narrative.push({
 			scene: 'lolly', // 19
 			text: text,
-			code: {lickers: _.pluck(lickers, 'id')}, 
+			code: {lickers: _.map(lickers, 'id')}, 
 			damage: damage
 		});
 	}
@@ -982,7 +982,7 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 				damage: {}
 			});
 		}
-	}, this);
+	}.bind(this));
 	// END SCENE 22/27
 	
 	
@@ -1015,28 +1015,28 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 					});
 				}
 				
-			}, this);
+			}.bind(this));
 		}
-	}, this);
+	}.bind(this));
 	
 	
 	
 	// SCENES 23-25 END OF GAME?
 	var gameOver = false;
-	var survivors = _.where(actions, function(player) {return (player.health > 0 && !player.zombie)}); // winners 
+	var survivors = _.filter(actions, function(player) {return (player.health > 0 && !player.zombie)}); // winners 
 	
 	var peeps = {};
 	// get list of all current and zombie players
 	peeps.everyone = _.values(this.players).concat(this.zombies);
 	//get categories of players
-	peeps.survivors = _.where(peeps.everyone, function(player) {return (player.health > 0 && !player.zombie)}); // winners 
-	peeps.loserswhogetpoints = _.where(peeps.everyone, function(player) {return (player.loser)}); // those who stuck around long enough to lose 
-	peeps.everyonedefeated = _.where(peeps.everyone, function(player) {return (player.loser || player.zombie)}); // non-winners - winners get credit for defeating them
-	peeps.runaways = _.where(peeps.everyone, function(player) {return (!player.loser && player.zombie)}); // ran away before losing 
+	peeps.survivors = _.filter(peeps.everyone, function(player) {return (player.health > 0 && !player.zombie)}); // winners 
+	peeps.loserswhogetpoints = _.filter(peeps.everyone, function(player) {return (player.loser)}); // those who stuck around long enough to lose 
+	peeps.everyonedefeated = _.filter(peeps.everyone, function(player) {return (player.loser || player.zombie)}); // non-winners - winners get credit for defeating them
+	peeps.runaways = _.filter(peeps.everyone, function(player) {return (!player.loser && player.zombie)}); // ran away before losing 
 	
 	/* 
 	_.each(['everyone','winners','loserswhogetpoints','everyonedefeated','runaways'], function(category) {
-		console.log(category + " >>", _.pluck(peeps[category], 'nickname'));
+		console.log(category + " >>", _.map(peeps[category], 'nickname'));
 	});
 	*/
 	
@@ -1051,17 +1051,17 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 		
 		narrative.push({
 			scene: 'end',
-			text: _.pluck(peeps.survivors, 'nickname').join(' and ') + ' became best friends and won the game! They each got ' + winner_points + ' points and everyone else got ' + SFGame.POINTS_FOR_PLAYING + '.',
-			code: {winners:_.pluck(peeps.survivors, 'id')},
+			text: _.map(peeps.survivors, 'nickname').join(' and ') + ' became best friends and won the game! They each got ' + winner_points + ' points and everyone else got ' + SFGame.POINTS_FOR_PLAYING + '.',
+			code: {winners:_.map(peeps.survivors, 'id')},
 			damage: {}
 		});
 		gameOver = {
 			win: 'dual',
 			winner_points: winner_points,
-			winners: _.pluck(peeps.survivors, 'id'),
+			winners: _.map(peeps.survivors, 'id'),
 			loser_points: SFGame.POINTS_FOR_PLAYING,
-			losers: _.pluck(peeps.loserswhogetpoints, 'id'),
-			runaways: _.pluck(peeps.runaways, 'id')
+			losers: _.map(peeps.loserswhogetpoints, 'id'),
+			runaways: _.map(peeps.runaways, 'id')
 		}; 
 	}
 	else if (survivors.length == 1) {
@@ -1071,16 +1071,16 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 		narrative.push({
 			scene: 'end',
 			text: peeps.survivors[0].nickname + ' won the game all by herself! She got ' + winner_points + ' points and everyone else got ' + SFGame.POINTS_FOR_PLAYING + '.',
-			code: {winners:_.pluck(peeps.survivors, 'id')},
+			code: {winners:_.map(peeps.survivors, 'id')},
 			damage: {}
 		});
 		gameOver = {
 			win: 'single',
 			winner_points: winner_points,
-			winners: _.pluck(peeps.survivors, 'id'),
+			winners: _.map(peeps.survivors, 'id'),
 			loser_points: SFGame.POINTS_FOR_PLAYING,
-			losers: _.pluck(peeps.loserswhogetpoints, 'id'),
-			runaways: _.pluck(peeps.runaways, 'id')
+			losers: _.map(peeps.loserswhogetpoints, 'id'),
+			runaways: _.map(peeps.runaways, 'id')
 		}; 
 	}
 	else {
@@ -1095,8 +1095,8 @@ SFGame.prototype.resolveTurnStage2 = function(narrative, actions) {
 			win: 'none',
 			winners:[],
 			loser_points: SFGame.POINTS_FOR_PLAYING,
-			losers: _.pluck(peeps.loserswhogetpoints, 'id'),
-			runaways: _.pluck(peeps.runaways, 'id')
+			losers: _.map(peeps.loserswhogetpoints, 'id'),
+			runaways: _.map(peeps.runaways, 'id')
 		}; 
 	}
 	

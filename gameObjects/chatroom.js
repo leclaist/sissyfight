@@ -140,18 +140,18 @@ ChatRoom.prototype.floodSquelchTest = function(nickname) {
 	//	 Alternately, could have a timed interval for cleaning the logs, but i like to avoid those.
 	var expire = now - this.floodwatch.interval;
 	_.each(this.floodwatch.logs, function(log, nickname) {
-		log.record = _.filter(log.record, function(timestamp) {return timestamp > expire}, this);
-	}, this);
+		log.record = _.filter(log.record, function(timestamp) {return timestamp > expire}.bind(this));
+	}.bind(this));
 	
 
 	// check squelch times and clean up any logs where user's not squelched and has no recent chat timestamps
-	this.floodwatch.logs = _.pick(this.floodwatch.logs, function(log, nickname) {
+	this.floodwatch.logs = _.pickBy(this.floodwatch.logs, function(log, nickname) {
 		if (log.squelchTime < now) {
 			log.squelchTime = undefined;
 			console.log("ChatRoom[" + this.id + "," + this.name + "]: connection " + nickname + " was unsquelched.");
 		}
 		return (log.squelchTime || log.record.length > 0)
-	}, this);
+	}.bind(this));
 	
 	
 	// check if current user has talked too much and should be squelched
@@ -191,7 +191,7 @@ ChatRoom.prototype.nestedApply = function(data,conn) {
 	_.each(data, function(val, key) {
 		if (typeof val==='function') data[key] = val.call(this, conn);
 		else if (typeof val==='object') this.nestedApply(val, conn);
-	}, this);
+	}.bind(this));
 }
 
 // return list of occupant user properties (default id and nickname)

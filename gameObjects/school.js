@@ -131,7 +131,7 @@ School.prototype.update = function() {
 				game._purgeable = true;
 			}
 		}
-	}, this);
+	}.bind(this));
 	
 	// console.log("school update: time=", process.uptime(), _.map(this.games, function(g) {return{name:g.name, occ:g._lastOccupiedTime, empty:g._empty, purge:g._purgeable}}));
 	
