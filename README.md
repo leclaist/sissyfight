@@ -2,12 +2,13 @@
 
 Revival of the 1999 multiplayer game SiSSYFiGHT 2000, rewritten with node.js, SockJS, and CreateJS HTML5 library.
 
+**Play it at [sissyfight2026.lol](https://sissyfight2026.lol).**
+
+This is a fork of the archived [moonmilk/sissyfight](https://github.com/moonmilk/sissyfight) by Ranjit Bhatnagar, Naomi Clark, and Eric Zimmerman, with the server modernized (Node.js 24, Express 5, MySQL 8) and deployed to Azure. The game itself is unchanged.
+
 All original code and art are released under the MIT License or the Creative Commons CC-BY License. This repository also incorporates works that have their own licenses. For details, see [licenses.md](licenses.md).
 
-This is an archived repository - we can't accept issues or pull requests here. You are welcome to fork this repo or copy it anywhere else. 
-
-To find collaborators and exchange info about the source code, we recommend the SiSSYFiGHT Facebook group.
-We unfortunately can't offer any additional support for use of the code.
+To find collaborators and exchange info about the source code, the original authors recommend the SiSSYFiGHT Facebook group.
 
 ## running a sissyfight server
 
@@ -20,6 +21,12 @@ With Docker installed:
 ```
 docker compose up                        # http://localhost:3000 (APP_PORT=3100 docker compose up to use another port)
 docker compose run --rm app npm test     # game engine + server tests against MySQL
+```
+
+A game needs at least 3 players. To play alone, start some bots that join whatever game room you're in and make random moves:
+
+```
+docker compose exec app node scripts/dev-bots.js 3 angel   # 3 bots in the Sweet Sunny Angel Valley school
 ```
 
 ### docker image
@@ -65,8 +72,22 @@ terraform output dns_records                               # A + TXT records to 
 ../infra/bind-domain.sh                                     # once DNS resolves: custom domain + managed certificate
 ```
 
-After that, `infra/deploy.sh` builds the current commit and rolls the app onto it.
+After that, `infra/deploy.sh` builds the current commit and rolls the app onto it. Terraform state and `terraform.tfvars` hold secrets and are gitignored.
+
+The live site runs as:
+
+| | |
+|---|---|
+| URL | https://sissyfight2026.lol (DNS at Porkbun: an A record to the Container Apps environment, plus the `asuid` TXT verification record) |
+| App | Container App `sissyfight` in resource group `sissyfight-rg` (East US), one replica |
+| Database | Azure Database for MySQL Flexible Server 8.4 (Burstable B1ms), 7-day point-in-time backups |
+| Image | `continuationacr.azurecr.io/sissyfight:<commit>` |
+| Logs | Log Analytics workspace `sissyfight-logs`, or `az containerapp logs show -n sissyfight -g sissyfight-rg --follow` |
+
+Password reset emails are off until a SendGrid key is set (`sendgrid_api_key` in `terraform.tfvars`).
 
 ### continuous deployment
 
-[CI](.github/workflows/ci.yml) runs the tests (against a MySQL service) and builds the Docker image on every push and pull request. When CI passes on `master`, [Deploy](.github/workflows/deploy.yml) builds the image in ACR, rolls the container app onto it, waits for the new revision to be healthy, and smoke-tests the site. It logs in to Azure with OpenID Connect, using these repository variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`. The deploy job is skipped until they are set. Terraform state and `terraform.tfvars` hold secrets and are gitignored.
+[CI](.github/workflows/ci.yml) runs the tests (against a MySQL service) and builds the Docker image on every push and pull request. When CI passes on `master`, [Deploy](.github/workflows/deploy.yml) builds the image in ACR, rolls the container app onto it, waits for the new revision to be healthy, and smoke-tests the site. It logs in to Azure with OpenID Connect, using these repository variables: `AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`. The deploy job is skipped until they are set; `infra/setup-github-oidc.sh` creates the Azure identity (trusted only for `master` of this repo) and sets them, once.
+
+To ship a change: open a pull request, let CI pass, and merge it.
