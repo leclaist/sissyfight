@@ -89,12 +89,13 @@ module.exports = function(app) {
 	
 	// reset password stage 2 page
 	app.get('/reset/:code', function(req, res) {
-		req.session.destroy();
-		var context = {
-			includes: includes,
-			code: req.params.code
-		};
-		res.render('resetpw.html', context);
+		req.session.destroy(function() {
+			var context = {
+				includes: includes,
+				code: req.params.code
+			};
+			res.render('resetpw.html', context);
+		});
 	});
 	
 	// site pages
@@ -438,14 +439,14 @@ module.exports = function(app) {
 	
 
 	
-	app.get('/user/logout', function(req, res) {
-		req.session.destroy();
-		res.redirect('/main');// + qs.stringify(req.query));
-	});
-	app.post('/user/logout', function(req, res) {
-		req.session.destroy();
-		res.redirect('/main'); //' + qs.stringify(req.query));
-	});
+	// respond once the session is really gone, so the next request isn't still logged in
+	function logout(req, res) {
+		req.session.destroy(function() {
+			res.redirect('/main');
+		});
+	}
+	app.get('/user/logout', logout);
+	app.post('/user/logout', logout);
 	
 
 }
