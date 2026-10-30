@@ -1,0 +1,2 @@
+subscription_id = "<your subscription id>"
+# sendgrid_api_key = "SG...."   # optional: enables password reset emails
