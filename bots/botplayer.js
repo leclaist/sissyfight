@@ -19,12 +19,17 @@ var PERSONALITIES = [
 	"smug know-it-all who explains strategy to everyone, whether they asked or not",
 	"chaotic gremlin who does unpredictable things just to see what happens",
 	"loyal friend who sticks with whoever is nicest to her in chat",
-	"sarcastic and unbothered, with one-word comebacks"
+	"sarcastic and unbothered, with one-word comebacks",
+	"gossip who spreads rumors about who's secretly planning to tattle",
+	"overly competitive teacher's pet who keeps score of everything",
+	"dreamy space cadet who misreads the room but is weirdly lucky",
+	"fake-nice politician who promises alliances to everyone"
 ];
 
 var nextId = 1;
 
-function BotPlayer(manager, room) {
+// takenPersonalities: personalities already used in this room, so each bot is different
+function BotPlayer(manager, room, takenPersonalities) {
 	var id = -(nextId++); // negative ids: never a real user, never ranked
 	var taken = room.getOccupantNicknames();
 	var name = _.sample(_.difference(NAMES, taken)) || ('Robo' + (-id));
@@ -32,7 +37,9 @@ function BotPlayer(manager, room) {
 	this.manager = manager;
 	this.room = room;
 	this.nickname = name;
-	this.personality = _.sample(PERSONALITIES);
+	this.personality = _.sample(_.difference(PERSONALITIES, takenPersonalities || [])) || _.sample(PERSONALITIES);
+	this.rival = null;
+	this.lastSpoke = 0;
 	this.turn = 0;
 	this.lastTurn = [];
 	this.gone = false;
@@ -91,7 +98,9 @@ BotPlayer.prototype.pressStart = function() {
 };
 
 BotPlayer.prototype.say = function(text) {
-	if (text && this.inRoom()) this.room.say(this.conn, text);
+	if (!text || !this.inRoom()) return;
+	this.lastSpoke = Date.now();
+	this.room.say(this.conn, text);
 };
 
 
@@ -105,6 +114,7 @@ BotPlayer.prototype.handleEvent = function(type, data) {
 			case 'startGame':
 				this.turn = 0;
 				this.lastTurn = [];
+				this.rival = null;
 				break;
 			case 'startTurn':
 				this.turn++;
@@ -135,9 +145,11 @@ BotPlayer.prototype.gameState = function() {
 	return {
 		turn: this.turn,
 		me: {nickname: this.nickname, health: me.health, lollies: me.lollies, tattles: me.tattles},
+		// who's a bot is left out on purpose: bots treat everyone the same
 		others: players.filter(function(p) { return p.id !== me.id && !p.loser && !p.zombie; }).map(function(p) {
-			return {id: p.id, nickname: p.nickname, health: p.health, bot: p.id < 0};
+			return {id: p.id, nickname: p.nickname, health: p.health};
 		}),
+		rival: this.manager.rivalOf(this),
 		out: _.map(players.filter(function(p) { return p.loser; }), 'nickname'),
 		allowed: brain.MOVES.filter(function(m) { return !(custom && custom.moves && custom.moves[m] == 0); }),
 		lastTurn: this.lastTurn,
@@ -159,7 +171,7 @@ BotPlayer.prototype.playTurn = function(turn) {
 		setTimeout(function() {
 			if (!bot.inRoom() || bot.room.game !== game || bot.turn !== turn) return;
 			bot.room.act(bot.conn, {action: move.action, target: move.target});
-			if (move.say) bot.say(move.say);
+			if (move.say && bot.manager.claimTaunt(bot, turn)) bot.say(move.say);
 			bot.room.act(bot.conn, {action: 'timeout'});
 		}, wait).unref();
 	});
