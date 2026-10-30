@@ -182,7 +182,9 @@ var p = GameRoomPlayer.prototype = new createjs.Container();
 		this.chatBuffer.push(text);
 		
 		while(this.chatBuffer.length > 8) this.chatBuffer.shift();
-		this.items.chatText.htmlElement.innerHTML = '<div class="' + textClass + '">' + this.chatBuffer.join('<br/>') + '</div>';
+		// each message in its own block, with a gap between them, so replies don't run together
+		var lines = _.map(this.chatBuffer, function(line) { return '<div class="gameroomChatLine">' + line + '</div>'; });
+		this.items.chatText.htmlElement.innerHTML = '<div class="' + textClass + '">' + lines.join('') + '</div>';
 		this.items.chatText.htmlElement.scrollTop = this.items.chatText.htmlElement.scrollHeight;
 		
 		// count the words and do talking animation for about 300 msec per word 

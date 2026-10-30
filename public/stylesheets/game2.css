@@ -44,6 +44,11 @@
 	font-weight: 	normal;
 }
 
+/* gap between separate messages in a speech bubble */
+.gameroomChatLine + .gameroomChatLine {
+	margin-top:		12px;
+}
+
 .gameroomChatBig {
 	line-height: 	36px;
 	font-size: 		64px;
