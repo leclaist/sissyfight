@@ -22,6 +22,9 @@ var _ = require('lodash');
 
 var text = require('../models/text');
 
+// changes on every deploy/restart, so browsers fetch new game scripts instead of cached ones
+var assetVersion = Date.now().toString(36);
+
 // helper: check that all listed arguments are strings
 function checkArgs(body, args) {
 	if (!body) return false;
@@ -213,7 +216,8 @@ module.exports = function(app) {
 				school:req.session.school, 
 				gameScale:gameScale, gameWidth:gameWidth, gameHeight:gameHeight,
 				singleSize: (gameScale==1),
-				doubleSize: (gameScale==2)	
+				doubleSize: (gameScale==2),
+				assetVersion: assetVersion
 			};
 			text.retrieve('homepage-news', function(err,texts) {
 				if (!err) context.news = texts['homepage-news'];

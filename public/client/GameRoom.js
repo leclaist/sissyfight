@@ -689,6 +689,7 @@ var p = GameRoom.prototype = new createjs.Container();
 			this.items.actionMenu.y = player.y+108;
 			
 			this.items.actionMenu.mouseDrag(event);
+			this.menuPress = {time: Date.now(), x: event.stageX, y: event.stageY};
 		}
 		
 		else if (event.type=='pressmove') {
@@ -697,31 +698,77 @@ var p = GameRoom.prototype = new createjs.Container();
 		
 		else if (event.type=='pressup') {
 			if (this.items.actionMenu) {
-				var selectedAction = this.items.actionMenu.getSelectedAction();
-				
-				// tell the server (cower/lick/tattle don't have a target)
-				if (selectedAction) {
-					sf.Sound.play('snd_action_select');
-				
-					var action = {action:selectedAction};
-					if (selectedAction=='grab' || selectedAction=='scratch' || selectedAction=='tease' || selectedAction=='boot') {
-						action.target = player.playerInfo.id;
-					}
-					g.comm.writeEvent('act', action);
-				
-					// show the choice on target player
-					this.setPlayerActionTag(player, selectedAction);
-					
-					this.showCue("You can change your action, if you want, before the turn ends.");
+				// a quick click (rather than press-drag-release) leaves the menu open
+				// so the next click can choose an action
+				var press = this.menuPress;
+				if (press && (Date.now() - press.time) < GameRoom.CLICK_MS &&
+						Math.abs(event.stageX - press.x) < GameRoom.CLICK_DISTANCE && Math.abs(event.stageY - press.y) < GameRoom.CLICK_DISTANCE) {
+					this.keepActionMenuOpen(player);
+					return;
 				}
-
-				// get rid of menu
-				this.removeActionMenu();
+				this.chooseAction(player, this.items.actionMenu.getSelectedAction());
 			}
 		}
 	}
 	
+	// a press shorter than this, that moves less than this, is a click
+	GameRoom.CLICK_MS = 350;
+	GameRoom.CLICK_DISTANCE = 6;
+	
+	// menu stays open after a click: it follows the mouse, and the next click
+	// chooses the highlighted action (or closes the menu if there isn't one)
+	p.keepActionMenuOpen = function(player) {
+		var room = this, stage = this.getStage();
+		var menu = this.items.actionMenu;
+		var move = function(event) {
+			if (room.items.actionMenu === menu) menu.mouseDrag(event);
+		};
+		var up = function(event) {
+			if (room.items.actionMenu !== menu) return;
+			menu.mouseDrag(event);
+			room.chooseAction(player, menu.getSelectedAction());
+		};
+		// EaselJS only hit-tests objects with mouse listeners: without one, a click
+		// on the menu would go through to the girl underneath and reopen it
+		menu.addEventListener('mousedown', function() {});
+		// wait for the click that opened the menu to finish before listening
+		setTimeout(function() {
+			if (room.items.actionMenu !== menu) return;
+			stage.addEventListener('stagemousemove', move);
+			stage.addEventListener('stagemouseup', up);
+			room.stickyMenuListeners = {stage: stage, move: move, up: up};
+		}, 0);
+	}
+	
+	// send the chosen action (if any) and close the menu
+	p.chooseAction = function(player, selectedAction) {
+		// tell the server (cower/lick/tattle don't have a target)
+		if (selectedAction) {
+			sf.Sound.play('snd_action_select');
+		
+			var action = {action:selectedAction};
+			if (selectedAction=='grab' || selectedAction=='scratch' || selectedAction=='tease' || selectedAction=='boot') {
+				action.target = player.playerInfo.id;
+			}
+			g.comm.writeEvent('act', action);
+		
+			// show the choice on target player
+			this.setPlayerActionTag(player, selectedAction);
+			
+			this.showCue("You can change your action, if you want, before the turn ends.");
+		}
+
+		// get rid of menu
+		this.removeActionMenu();
+	}
+	
 	p.removeActionMenu = function() {
+		this.menuPress = undefined;
+		if (this.stickyMenuListeners) {
+			this.stickyMenuListeners.stage.removeEventListener('stagemousemove', this.stickyMenuListeners.move);
+			this.stickyMenuListeners.stage.removeEventListener('stagemouseup', this.stickyMenuListeners.up);
+			this.stickyMenuListeners = undefined;
+		}
 		if (this.items.actionMenu) {
 			this.layers.actionMenuLayer.removeChild(this.items.actionMenu);
 			this.items.actionMenu.destroy();
