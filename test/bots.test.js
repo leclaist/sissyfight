@@ -28,6 +28,8 @@ config.bots.thinkDelayMs = 0;
 config.bots.fillDelayMs = 50;
 config.bots.replyGapMs = 30;
 config.bots.paceTurns = false;
+// no unprompted chat unless a test turns it on
+config.bots.banterMinMs = config.bots.banterMaxMs = 60 * 60 * 1000;
 
 const brain = require('../bots/brain');
 const School = require('../gameObjects/school');
@@ -366,4 +368,47 @@ test('bots spread their moves over the turn', function() {
 	finally {
 		config.bots.paceTurns = false;
 	}
+});
+
+test('bots chat on their own and answer each other, but not forever', async function() {
+	const prompts = [];
+	brain.setClient(fakeClient(function(params) {
+		const prompt = params.messages[0].content;
+		prompts.push(prompt);
+		const me = /You \((\S+)\)/.exec(prompt)[1];
+		if (/Chat has been quiet/.test(prompt)) return reply({say: me + ' starting drama'});
+		return reply({say: me + ' answering'});
+	}));
+	const banter = [config.bots.banterMinMs, config.bots.banterMaxMs];
+	config.bots.banterMinMs = config.bots.banterMaxMs = 40;
+	const school = newSchool();
+	const room = Object.values(school.games).find(function(g) { return g.bots; });
+	const me = human();
+	try {
+		room.join(me);
+		// the quiet-chat check uses the clock: pretend chat has been quiet for a while
+		const state = function() { return school.bots.rooms[room.id]; };
+		await waitFor(function() { return state(); });
+		await waitFor(function() {
+			state().lastChat = 0;
+			return botLines(me).some(function(e) { return /starting drama/.test(e[1].text); });
+		});
+		assert.ok(prompts.some(function(p) { return /Chat has been quiet/.test(p); }));
+
+		// bot-to-bot replies stop after a couple of lines
+		config.bots.banterMinMs = config.bots.banterMaxMs = 60 * 60 * 1000;
+		await settle(400);
+		const answers = botLines(me).filter(function(e) { return /answering/.test(e[1].text); });
+		assert.ok(answers.length <= 2 * 2, 'bounded bot chatter, saw ' + answers.length);
+		answers.forEach(function(e) {
+			assert.ok(e[1].text.indexOf(e[1].nickname + ' answering') === 0, 'a bot never answers herself');
+		});
+	}
+	finally {
+		config.bots.banterMinMs = banter[0];
+		config.bots.banterMaxMs = banter[1];
+		room.leave(me);
+		await settle();
+	}
+	assert.strictEqual(room.occupants.length, 0, 'bots leave and the banter stops with the human');
 });

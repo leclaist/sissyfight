@@ -89,6 +89,8 @@ exports.bots = {
 	perMinuteLimit: 120,
 	fillDelayMs: 20000,		// how long humans wait in a regular room before bots fill it
 	replyGapMs: 2500,		// minimum time between bot chat replies in a room
+	banterMinMs: 15000,		// bots chat on their own every 15-40 seconds while people are around
+	banterMaxMs: 40000,
 	thinkDelayMs: 2500,		// bots take a moment before chatting or pressing start
 	paceTurns: true			// bots pick their move at a random point in the turn, not right away
 };
