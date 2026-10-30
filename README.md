@@ -11,35 +11,30 @@ We unfortunately can't offer any additional support for use of the code.
 
 ## running a sissyfight server
 
-The sissyfight server code runs under node.js. The original server is running on [Heroku](https://www.heroku.com/). 
+The server runs on Node.js 24 with MySQL 8 for users, scores, and sessions, and an SMTP email service (SendGrid) for password reset emails. Game state lives in the server process, so run exactly one instance.
 
-## external servers
+### local development
 
-Sissyfight uses MySQL for persistent storage of user and score records, Redis for user sessions, and a service to send out emails, e.g. for password resets. 
+With Docker installed:
 
-### MySQL
+```
+docker compose up                        # http://localhost:3000 (APP_PORT=3100 docker compose up to use another port)
+docker compose run --rm app npm test     # game engine + server tests against MySQL
+```
 
-We use a MySQL server hosted by [Dreamhost](https://www.dreamhost.com/), but you can run your own or use any commercial MySQL service. To connect your MySQL server to your sissyfight node application, set the environment variable `SISSYFIGHT_DB`:
+`npm run db:setup` creates the tables and default texts from [database_tables.sql](database_tables.sql). It is safe to run on every deploy.
 
-`SISSYFIGHT_DB=mysql|DB SERVER|DB NAME|DB USER|DB PASSWORD`
+### configuration
 
-where `DB_SERVER` is the domain name of your database server, `DB NAME` is the name of the database, and `DB USER` and `DB PASSWORD` are the username and password for that database. 
+| Variable | |
+|---|---|
+| `DATABASE_URL` | `mysql://user:password@host:3306/database` (the older `SISSYFIGHT_DB=mysql\|host\|database\|user\|password` form also works) |
+| `DB_SSL` | `true` to require TLS to MySQL (Azure Database for MySQL needs this) |
+| `SESSION_SECRET` | secret for signing session cookies; required when `NODE_ENV=production` |
+| `SENDGRID_API_KEY` | SendGrid API key for password reset emails (or `SISSYFIGHT_MAILER=service\|user\|password` for another [Nodemailer](https://nodemailer.com/) service) |
+| `MAIL_TRANSPORT` | `json` to log emails instead of sending them |
+| `PUBLIC_URL` | base URL used in emailed links, e.g. `https://play.sissyfight.com` |
+| `BASIC_AUTH` | optional closed-testing logins: `user,password[\|user,password]` |
+| `PORT` | HTTP port (default 3000) |
 
-In your MySQL database, you can set up the user, score, and text tables according to the structures in [database_tables.sql](database_tables.sql).
-
-### Redis
-
-We use a Redis server hosted by [Redis Labs](https://redislabs.com/), but you can run your own or use any commercial Redis service. To connect your Redis server, set the environment variable `SISSYFIGHT_REDIS`:
-
-`SISSYFIGHT_REDIS=redis|REDIS SERVER|PORT|NAME|AUTH`
-
-`REDIS SERVER` is the domain name of the Redis server, `PORT` is the port number, `NAME` is the username and `AUTH` is the password or authentication token.
-
-### Email
-
-We use [SendGrid](https://sendgrid.com/)'s [Email API](https://sendgrid.com/solutions/email-api/) to send emails, but you can use any email service that is supported by the [Nodemailer](https://nodemailer.com/about/) module. To connect sissyfight to your your email server, set the environment variable `SISSYFIGHT_MAILER`:
-
-`SISSYFIGHT_MAILER=MAILSERVICE|USER|PASSWORD`
-
-`MAILSERVICE` is the name of the email service you are using (see Nodemailer's documentation), and `USER` and `PASSWORD` are your authentication info for the email service.
-
+The password reset email's sender, subject, and text are rows in the `Texts` table (`pwreset-email-*`); set `pwreset-email-from` to a sender address verified in SendGrid. The `homepage-news` row is shown on the main page.

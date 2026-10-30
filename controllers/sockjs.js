@@ -5,6 +5,7 @@
 	Split 'em out if they get too big
 */
 
+var db = require("../database");
 var User = require("../models/user");
 var Homeroom = require('../gameObjects/homeroom');
 
@@ -116,7 +117,7 @@ exports.init = function(app, sockjs) {
 					conn.removeListener("login", loginListener);
 					
 					// grab fresh user object (deserialized user from session may be out of date, and it doesn't have ORM methods)
-					User.find(session.user.id).complete( function(err, user) {
+					db.nodeify(User.findByPk(session.user.id), function(err, user) {
 						if (err) {
 							console.log("Socket login: couldn't find user object due to database problem: " + err);
 							conn.writeEvent("loginError", {where:"login", error:"dbusererr", message: "Database trouble"});
@@ -196,7 +197,7 @@ exports.init = function(app, sockjs) {
 			return;
 		}
 		conn.user.avatar = data.avatar;
-		conn.user.save().complete(function(err){
+		db.nodeify(conn.user.save(), function(err){
 			if (err) {
 				console.log("saveAvatar: trouble saving user " + conn.user.nickname + ": " + err);
 				if (done) done({where:'avatar', error:"dbaverr", message:"Trouble saving the avatar"});

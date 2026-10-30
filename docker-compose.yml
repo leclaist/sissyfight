@@ -1,5 +1,5 @@
 # Local development: MySQL 8.4 + the app on Node 24.
-#   docker compose up            run the server on http://localhost:3000
+#   docker compose up            run the server on http://localhost:3000 (APP_PORT=3100 to change)
 #   docker compose run --rm app npm test
 services:
   db:
@@ -10,10 +10,10 @@ services:
       MYSQL_USER: sissyfight
       MYSQL_PASSWORD: sissyfight
     volumes:
-      - ./database_tables.sql:/docker-entrypoint-initdb.d/01-tables.sql:ro
+      - ./docker/mysql-init.sql:/docker-entrypoint-initdb.d/01-test-db.sql:ro
       - db-data:/var/lib/mysql
     ports:
-      - "3306:3306"
+      - "${DB_PORT:-3306}:3306"
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-usissyfight", "-psissyfight"]
       interval: 5s
@@ -22,15 +22,17 @@ services:
   app:
     image: node:24-bookworm
     working_dir: /app
-    command: npm start
+    command: sh -c "npm run db:setup && npm start"
     environment:
-      SISSYFIGHT_DB: mysql|db|sissyfight|sissyfight|sissyfight
+      DATABASE_URL: mysql://sissyfight:sissyfight@db:3306/sissyfight
+      TEST_DATABASE_URL: mysql://sissyfight:sissyfight@db:3306/sissyfight_test
+      MAIL_TRANSPORT: json
     volumes:
       - .:/app
       # keep linux node_modules out of the host checkout
       - node-modules:/app/node_modules
     ports:
-      - "3000:3000"
+      - "${APP_PORT:-3000}:3000"
     depends_on:
       db:
         condition: service_healthy
