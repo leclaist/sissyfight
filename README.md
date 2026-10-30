@@ -10,6 +10,17 @@ All original code and art are released under the MIT License or the Creative Com
 
 To find collaborators and exchange info about the source code, the original authors recommend the SiSSYFiGHT Facebook group.
 
+## bots
+
+When there aren't enough people around, players can fight computer-controlled girls:
+
+- Every school has a **Robo Recess** room. When someone walks in, bots fill it to 4 players, so a game can start right away.
+- In any other room, if people wait about 20 seconds without enough players for a game (3), bots join to make up the numbers.
+- Bots leave when the humans do. Booting a bot works like booting anyone, and she isn't replaced.
+- Bots' names start with "Robo" (reserved, so nobody can pretend to be one). They have no accounts and never appear in the rankings; humans still score normally in games with bots.
+
+With `ANTHROPIC_API_KEY` set, each bot asks Claude (Haiku 5.5 by default, `BOT_MODEL` to change) for her move every turn, with the game state, last turn's results, and recent chat, and she can trash-talk or answer when someone talks to her. Without a key, or if the API is slow or failing, or past `BOT_DAILY_CALL_LIMIT` calls in a day (default 3000), bots pick random legal moves and stay quiet. Set `BOTS=off` to disable them. The code is in [bots/](bots).
+
 ## running a sissyfight server
 
 The server runs on Node.js 24 with MySQL 8 for users, scores, and sessions, and an SMTP email service (SendGrid) for password reset emails. Game state lives in the server process, so run exactly one instance.
@@ -57,6 +68,8 @@ Run exactly one replica (game rooms live in memory), route WebSockets through th
 | `PUBLIC_URL` | base URL used in emailed links, e.g. `https://play.sissyfight.com` |
 | `BASIC_AUTH` | optional closed-testing logins: `user,password[\|user,password]` |
 | `PORT` | HTTP port (default 3000) |
+| `ANTHROPIC_API_KEY` | lets bots use Claude for moves and chat (optional) |
+| `BOTS`, `BOT_MODEL`, `BOT_DAILY_CALL_LIMIT` | turn bots `off`, pick their model, cap model calls per day |
 
 The password reset email's sender, subject, and text are rows in the `Texts` table (`pwreset-email-*`); set `pwreset-email-from` to a sender address verified in SendGrid. The `homepage-news` row is shown on the main page.
 
@@ -84,7 +97,7 @@ The live site runs as:
 | Image | `continuationacr.azurecr.io/sissyfight:<commit>` |
 | Logs | Log Analytics workspace `sissyfight-logs`, or `az containerapp logs show -n sissyfight -g sissyfight-rg --follow` |
 
-Password reset emails are off until a SendGrid key is set (`sendgrid_api_key` in `terraform.tfvars`).
+Password reset emails are off until a SendGrid key is set (`sendgrid_api_key` in `terraform.tfvars`). Bots use Claude once `anthropic_api_key` is set there; apply with `terraform apply`.
 
 ### continuous deployment
 

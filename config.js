@@ -11,6 +11,10 @@
 		MAIL_TRANSPORT		set to "json" to log emails instead of sending them (dev/test)
 		PUBLIC_URL			base URL used in emailed links, e.g. https://play.sissyfight.com
 		BASIC_AUTH			optional closed-testing logins: user,password[|user,password...]
+		ANTHROPIC_API_KEY	lets bots use Claude for moves and chat (without it they play randomly and stay quiet)
+		BOTS				set to "off" to disable bot players
+		BOT_MODEL			Claude model for bots (default claude-haiku-5-5)
+		BOT_DAILY_CALL_LIMIT	cap on model calls per day (default 3000); bots play randomly past it
 		PORT				http port (default 3000)
 */
 var fs = require('fs');
@@ -74,6 +78,18 @@ else {
 exports.basicAuth = env.BASIC_AUTH ? env.BASIC_AUTH.split('|').map(function(userAndPassword) {
 	return userAndPassword.split(',');
 }) : null;
+
+
+// bot players
+exports.bots = {
+	enabled: env.BOTS !== 'off',
+	apiKey: env.ANTHROPIC_API_KEY || null,
+	model: env.BOT_MODEL || 'claude-haiku-5-5',
+	dailyCallLimit: parseInt(env.BOT_DAILY_CALL_LIMIT, 10) || 3000,
+	perMinuteLimit: 120,
+	fillDelayMs: 20000,		// how long humans wait in a regular room before bots fill it
+	thinkDelayMs: 2500		// bots take a moment before acting, like a person would
+};
 
 
 exports.schools = {
