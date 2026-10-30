@@ -10,6 +10,8 @@ REPO=leclaist/sissyfight
 NAME=sissyfight-github-deploy
 SUB=$(az account show --query id -o tsv)
 TENANT=$(az account show --query tenantId -o tsv)
+# GitHub's OIDC subject includes the numeric owner and repo ids
+SUBJECT=$(gh api "repos/$REPO" --jq '"repo:\(.owner.login)@\(.owner.id)/\(.name)@\(.id):ref:refs/heads/master"')
 
 APP_ID=$(az ad app list --display-name "$NAME" --query "[0].appId" -o tsv)
 if [[ -z "$APP_ID" ]]; then
@@ -18,7 +20,7 @@ if [[ -z "$APP_ID" ]]; then
   az ad app federated-credential create --id "$APP_ID" --parameters "{
     \"name\": \"github-master\",
     \"issuer\": \"https://token.actions.githubusercontent.com\",
-    \"subject\": \"repo:$REPO:ref:refs/heads/master\",
+    \"subject\": \"$SUBJECT\",
     \"audiences\": [\"api://AzureADTokenExchange\"]
   }" --query subject -o tsv
 fi
