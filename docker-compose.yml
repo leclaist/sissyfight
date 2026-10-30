@@ -1,0 +1,40 @@
+# Local development: MySQL 8.4 + the app on Node 24.
+#   docker compose up            run the server on http://localhost:3000
+#   docker compose run --rm app npm test
+services:
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: sissyfight
+      MYSQL_USER: sissyfight
+      MYSQL_PASSWORD: sissyfight
+    volumes:
+      - ./database_tables.sql:/docker-entrypoint-initdb.d/01-tables.sql:ro
+      - db-data:/var/lib/mysql
+    ports:
+      - "3306:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-usissyfight", "-psissyfight"]
+      interval: 5s
+      retries: 20
+
+  app:
+    image: node:24-bookworm
+    working_dir: /app
+    command: npm start
+    environment:
+      SISSYFIGHT_DB: mysql|db|sissyfight|sissyfight|sissyfight
+    volumes:
+      - .:/app
+      # keep linux node_modules out of the host checkout
+      - node-modules:/app/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:
+  node-modules:
