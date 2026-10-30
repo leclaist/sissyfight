@@ -14,12 +14,12 @@ To find collaborators and exchange info about the source code, the original auth
 
 When there aren't enough people around, players can fight computer-controlled girls:
 
-- Every school has a **Robo Recess** room. When someone walks in, bots fill it to 4 players, so a game can start right away.
-- In any other room, if people wait about 20 seconds without enough players for a game (3), bots join to make up the numbers.
+- Every school has a **Robo Recess** room. When someone walks in, bots fill it to 5 players (leaving a spot for a friend), so a game can start right away.
+- In any other room, if people wait about 20 seconds without enough players for a game (3), bots fill it to 5.
 - Bots leave when the humans do. Booting a bot works like booting anyone, and she isn't replaced.
 - Bots' names start with "Robo" (reserved, so nobody can pretend to be one). They have no accounts and never appear in the rankings; humans still score normally in games with bots.
 
-With `ANTHROPIC_API_KEY` set, each bot asks Claude (Haiku 5.5 by default, `BOT_MODEL` to change) for her move every turn, with the game state, last turn's results, and recent chat, and she can trash-talk or answer when someone talks to her. Without a key, or if the API is slow or failing, or past `BOT_DAILY_CALL_LIMIT` calls in a day (default 3000), bots pick random legal moves and stay quiet. Set `BOTS=off` to disable them. The code is in [bots/](bots).
+With `ANTHROPIC_API_KEY` set, each bot asks Claude (Haiku 5.5 by default, `BOT_MODEL` to change) for her move every turn, with the game state, last turn's results, and recent chat. Every bot in a room has a different personality, and each game every bot gets a secret rival spread across all players, bots included, so they don't all gang up on the one human (they aren't told who's a bot). Every message a person types gets a reply, from the bot she named or whoever spoke least recently, and at most one bot trash-talks per turn. Without a key, or if the API is slow or failing, or past `BOT_DAILY_CALL_LIMIT` calls in a day (default 3000), bots pick random legal moves and stay quiet. Set `BOTS=off` to disable them. The code is in [bots/](bots).
 
 ## running a sissyfight server
 

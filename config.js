@@ -88,6 +88,7 @@ exports.bots = {
 	dailyCallLimit: parseInt(env.BOT_DAILY_CALL_LIMIT, 10) || 3000,
 	perMinuteLimit: 120,
 	fillDelayMs: 20000,		// how long humans wait in a regular room before bots fill it
+	replyGapMs: 2500,		// minimum time between bot chat replies in a room
 	thinkDelayMs: 2500		// bots take a moment before acting, like a person would
 };
 
