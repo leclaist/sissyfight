@@ -7,6 +7,9 @@
 	  game (3), bots fill the room to FILL_PLAYERS after config.bots.fillDelayMs.
 	- Bots never stay in a room without humans, and booted bots aren't replaced.
 	- Chat: every human message gets a bot reply; at most one bot taunts per turn.
+	  While people are around, bots also chat on their own every so often, and
+	  sometimes answer each other (a couple of lines at most, then they wait
+	  for a person to say something).
 	- Each game, every bot gets a rival, spread over all players (bots included),
 	  so the bots don't all pile on the one human.
 */
@@ -19,6 +22,9 @@ var FILL_PLAYERS = 5; // leaves a spot for another person
 var MIN_PLAYERS = 3;
 var CHAT_HISTORY = 16;
 var SECOND_REPLY_CHANCE = 0.3;	// sometimes another bot chimes in too
+var BOT_REPLY_CHANCE = 0.5;	// chance a bot answers another bot's line
+var MAX_BOT_CHAIN = 2;		// bot-to-bot replies in a row before they wait for a person
+var BANTER_QUIET_MS = 8000;	// unprompted chat only after this long without any chat
 var TAUNT_CHANCE = 0.5;		// chance the turn's one taunt slot is used at all
 
 function BotManager(school) {
@@ -42,6 +48,7 @@ BotManager.prototype.state = function(room) {
 		this.rooms[room.id] = {
 			bots: [], fillTimer: null, booted: 0,
 			chat: [], lastReply: 0, replyTimer: null, pendingMessage: null,
+			lastChat: 0, botChain: 0, banterTimer: null,
 			taunts: {}, rivalsFor: null
 		};
 	}
@@ -71,6 +78,7 @@ BotManager.prototype.check = function(room) {
 	var humans = this.humans(room).length;
 
 	if (humans === 0) return this.dismiss(room);
+	this.scheduleBanter(room, state);
 	if (room.game) return this.cancelFill(state);
 
 	if (room.bots) {
@@ -116,6 +124,7 @@ BotManager.prototype.dismiss = function(room) {
 	if (!state) return;
 	this.cancelFill(state);
 	if (state.replyTimer) clearTimeout(state.replyTimer);
+	if (state.banterTimer) clearTimeout(state.banterTimer);
 	state.bots.slice().forEach(function(bot) { bot.leave(); });
 	delete this.rooms[room.id];
 };
@@ -180,13 +189,22 @@ BotManager.prototype.chatSeen = function(bot, data) {
 	if (!state || state.bots[0] !== bot) return;
 	state.chat.push({nickname: data.nickname, text: data.text});
 	if (state.chat.length > CHAT_HISTORY) state.chat.shift();
-	if (data.id > 0) this.queueReply(bot.room, state, data);
+	state.lastChat = Date.now();
+	if (data.id > 0) {
+		state.botChain = 0;
+		this.queueReply(bot.room, state, data);
+	}
+	else if (state.botChain < MAX_BOT_CHAIN && Math.random() < BOT_REPLY_CHANCE) {
+		state.botChain++;
+		this.queueReply(bot.room, state, data);
+	}
 };
 
 // answer every human message; messages that arrive while bots are still
 // answering are answered together once there's a gap
 BotManager.prototype.queueReply = function(room, state, message) {
-	state.pendingMessage = message;
+	// a person waiting for an answer takes priority over bot chatter
+	if (!(state.pendingMessage && state.pendingMessage.id > 0 && message.id < 0)) state.pendingMessage = message;
 	if (state.replyTimer) return;
 	var manager = this;
 	var wait = Math.max(0, state.lastReply + config.bots.replyGapMs - Date.now());
@@ -201,14 +219,16 @@ BotManager.prototype.queueReply = function(room, state, message) {
 
 BotManager.prototype.reply = function(room, state, message) {
 	state.lastReply = Date.now();
-	var bots = state.bots.filter(function(b) { return b.inRoom(); });
+	// bots don't answer themselves
+	var bots = state.bots.filter(function(b) { return b.inRoom() && b.conn.user.id !== message.id; });
 	if (!bots.length) return;
+	var fromBot = message.id < 0;
 
 	// a bot that was named answers; otherwise whoever spoke least recently
 	var text = String(message.text).toLowerCase();
 	var named = bots.filter(function(b) { return text.indexOf(b.nickname.toLowerCase()) !== -1; });
-	var responders = named.length ? named.slice(0, 2) : [_.minBy(_.shuffle(bots), 'lastSpoke')];
-	if (!named.length && bots.length > 1 && Math.random() < SECOND_REPLY_CHANCE) {
+	var responders = named.length ? named.slice(0, fromBot ? 1 : 2) : [_.minBy(_.shuffle(bots), 'lastSpoke')];
+	if (!fromBot && !named.length && bots.length > 1 && Math.random() < SECOND_REPLY_CHANCE) {
 		responders.push(_.sample(_.without(bots, responders[0])));
 	}
 
@@ -219,6 +239,27 @@ BotManager.prototype.reply = function(room, state, message) {
 			if (line) bot.later(function() { bot.say(line); }, i * 1500);
 		});
 	});
+};
+
+// every so often, while people are around, a bot says something unprompted
+BotManager.prototype.scheduleBanter = function(room, state) {
+	if (state.banterTimer) return;
+	var manager = this;
+	var wait = config.bots.banterMinMs + Math.random() * (config.bots.banterMaxMs - config.bots.banterMinMs);
+	state.banterTimer = setTimeout(function() {
+		state.banterTimer = null;
+		if (manager.rooms[room.id] !== state || manager.humans(room).length === 0) return;
+		manager.scheduleBanter(room, state);
+		// don't talk over a conversation that's already going
+		if (Date.now() - state.lastChat < BANTER_QUIET_MS) return;
+		var bot = _.sample(state.bots.filter(function(b) { return b.inRoom(); }));
+		if (!bot) return;
+		state.lastChat = Date.now();
+		brain.banter(bot, bot.gameState() || manager.lobbyState(room, bot)).then(function(line) {
+			if (line) bot.say(line);
+		});
+	}, wait);
+	state.banterTimer.unref();
 };
 
 // what a bot knows before a game starts

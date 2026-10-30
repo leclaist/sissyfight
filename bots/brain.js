@@ -223,6 +223,15 @@ exports.chatReply = function(bot, state, message) {
 	});
 };
 
+// an unprompted line to the room; resolves to a chat line, or '' to stay quiet
+exports.banter = function(bot, state) {
+	var prompt = describeState(state) + "\n\nChat has been quiet for a bit. Say one short line to the room or to one of the other girls by name: " +
+		"gossip, stir up drama, tease your rival, propose a team-up, complain about last turn, or brag. Make it fit what's going on, and don't repeat anything already in the chat.";
+	return ask(bot, prompt, CHAT_SCHEMA, 1024).then(function(reply) {
+		return reply ? cleanSay(reply.say) : '';
+	});
+};
+
 exports.MOVES = MOVES;
 exports.TARGETED = TARGETED;
 exports.legalMoves = legalMoves;
