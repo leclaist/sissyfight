@@ -52,3 +52,17 @@ Run exactly one replica (game rooms live in memory), route WebSockets through th
 | `PORT` | HTTP port (default 3000) |
 
 The password reset email's sender, subject, and text are rows in the `Texts` table (`pwreset-email-*`); set `pwreset-email-from` to a sender address verified in SendGrid. The `homepage-news` row is shown on the main page.
+
+## deploying to Azure
+
+[infra/](infra) holds Terraform for Azure Container Apps and Azure Database for MySQL, pulling the image from an existing container registry.
+
+```
+cp infra/terraform.tfvars.example infra/terraform.tfvars   # set subscription_id
+infra/deploy.sh                                             # build the image in ACR
+cd infra && terraform init && terraform apply              # create everything (first time)
+terraform output dns_records                               # A + TXT records to add at your DNS provider
+../infra/bind-domain.sh                                     # once DNS resolves: custom domain + managed certificate
+```
+
+After that, `infra/deploy.sh` builds the current commit and rolls the app onto it. Terraform state and `terraform.tfvars` hold secrets and are gitignored.
